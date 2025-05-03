@@ -1,1 +1,20 @@
 # SUSTech_CS307_DB_Proj2
+
+## dependencies
+- jsqlparser
+  - https://github.com/JSQLParser/JSqlParser
+  - https://jsqlparser.github.io/JSqlParser/
+- io.netty
+  - https://netty.io/
+  - https://netty.io/wiki/user-guide-for-4.x.html
+  - https://netty.io/4.1/api/index.html
+- tinylog
+  - https://tinylog.org/
+- commons-lang3
+  - https://github.com/apache/commons-lang
+  - https://commons.apache.org/proper/commons-lang/apidocs/
+- org.jline
+  - https://jline.org/
+  - https://github.com/jline/jline3/wiki
+- jackson
+  - https://github.com/FasterXML/jackson-core
