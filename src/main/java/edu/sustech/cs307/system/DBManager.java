@@ -84,7 +84,7 @@ public class DBManager {
         TableMeta tableMeta = new TableMeta(
                 table_name, columns);
         metaManager.createTable(tableMeta);
-        String table_folder = String.format("%s/%s", diskManager.getCurrentDir(), table_name);
+        String table_folder = String.format("%s/%s", diskManager.getCurrentDir(), table_name); // vulnerable to path
         File file_folder = new File(table_folder);
         if (!file_folder.exists()) {
             file_folder.mkdirs();
@@ -93,14 +93,14 @@ public class DBManager {
         for (var col : columns) {
             record_size += col.len;
         }
-        String data_file = String.format("%s/%s", table_name, "data");
+        String data_file = String.format("%s/%s", table_name, "data"); // vulnerable to path
         recordManager.CreateFile(data_file, record_size);
     }
 
     /**
      * Drops a table from the database by removing its metadata and associated
      * files.
-     * 
+     *
      * @param table_name The name of the table to be dropped
      * @throws DBException If the table directory does not exist or encounters IO
      *                     errors during deletion
@@ -116,7 +116,7 @@ public class DBManager {
      * Finally deletes the file/directory itself.
      *
      * @param file The file or directory to be deleted
-     * @throws IOException If deletion of any file or directory fails
+     * @throws DBException If deletion of any file or directory fails
      */
     private void deleteDirectory(File file) throws DBException {
         if (file.isDirectory()) {

@@ -69,6 +69,7 @@ public class DBEntry {
                             )
                             .build();
                     Logger.info("CS307-DB> ");
+                    // TODO : multiline input (split by ';')
                     sql = scanner.readLine();
                     if (sql.equalsIgnoreCase("exit")) {
                         running = false;
@@ -84,10 +85,12 @@ public class DBEntry {
                 try {
                     LogicalOperator operator = LogicalPlanner.resolveAndPlan(dbManager, sql);
                     if (operator == null) {
+                        Logger.info("No operator generated.");
                         continue;
                     }
                     PhysicalOperator physicalOperator = PhysicalPlanner.generateOperator(dbManager, operator);
                     if (physicalOperator == null) {
+                        Logger.info("No physical operator generated.");
                         Logger.info(operator);
                         continue;
                     }
