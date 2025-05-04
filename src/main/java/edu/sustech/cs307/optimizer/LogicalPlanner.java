@@ -2,12 +2,14 @@ package edu.sustech.cs307.optimizer;
 
 import java.io.StringReader;
 
+import edu.sustech.cs307.logicalOperator.dml.DropTableExecutor;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.parser.CCJSqlParserManager;
 import net.sf.jsqlparser.parser.JSqlParser;
 import net.sf.jsqlparser.statement.ExplainStatement;
 import net.sf.jsqlparser.statement.ShowStatement;
 import net.sf.jsqlparser.statement.Statement;
+import net.sf.jsqlparser.statement.drop.Drop;
 import net.sf.jsqlparser.statement.select.*;
 import net.sf.jsqlparser.statement.update.Update;
 import net.sf.jsqlparser.statement.insert.Insert;
@@ -47,6 +49,10 @@ public class LogicalPlanner {
         else if (stmt instanceof CreateTable createTableStmt) {
             CreateTableExecutor createTable = new CreateTableExecutor(createTableStmt, dbManager, sql);
             createTable.execute();
+            return null;
+        } else if (stmt instanceof Drop dropTableStmt) {
+            DropTableExecutor dropTable = new DropTableExecutor(dropTableStmt, dbManager);
+            dropTable.execute();
             return null;
         } else if (stmt instanceof ExplainStatement explainStatement) {
             ExplainExecutor explainExecutor = new ExplainExecutor(explainStatement, dbManager);

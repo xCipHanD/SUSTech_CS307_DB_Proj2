@@ -22,7 +22,7 @@ public class DBManager {
     private final RecordManager recordManager;
 
     public DBManager(DiskManager diskManager, BufferPool bufferPool, RecordManager recordManager,
-            MetaManager metaManager) {
+                     MetaManager metaManager) {
         this.diskManager = diskManager;
         this.bufferPool = bufferPool;
         this.recordManager = recordManager;
@@ -107,6 +107,22 @@ public class DBManager {
      */
     public void dropTable(String table_name) throws DBException {
         // todo: finish drop table method
+        if (!isTableExists(table_name)) {
+            throw new DBException(ExceptionTypes.TableDoseNotExist(table_name));
+        }
+        // remove table from meta manager
+        metaManager.dropTable(table_name);
+        // remove table from disk manager
+        String table_folder = String.format("%s/%s", diskManager.getCurrentDir(), table_name); // vulnerable to path
+        File file_folder = new File(table_folder);
+        if (!file_folder.exists()) {
+            throw new DBException(ExceptionTypes.TableDoseNotExist(table_name));
+        }
+        try {
+            deleteDirectory(file_folder);
+        } catch (DBException e) {
+            throw new DBException(ExceptionTypes.BadIOError("File deletion failed: " + file_folder.getAbsolutePath()));
+        }
     }
 
     /**
