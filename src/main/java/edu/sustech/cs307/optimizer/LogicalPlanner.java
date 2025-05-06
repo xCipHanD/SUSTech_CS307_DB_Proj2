@@ -41,7 +41,8 @@ public class LogicalPlanner {
             operator = handleInsert(dbManager, insertStmt);
         } else if (stmt instanceof Update updateStmt) {
             operator = handleUpdate(dbManager, updateStmt);
-        } else if (stmt instanceof Delete deleteStmt) {
+        }//TODO: modify the delete operator
+         else if (stmt instanceof Delete deleteStmt) {
             operator = handleDelete(dbManager, deleteStmt);
         } // functional
         else if (stmt instanceof CreateTable createTableStmt) {
