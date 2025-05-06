@@ -41,11 +41,9 @@ public class LogicalPlanner {
             operator = handleInsert(dbManager, insertStmt);
         } else if (stmt instanceof Update updateStmt) {
             operator = handleUpdate(dbManager, updateStmt);
-        } //else if( stmt instanceof  Delete deleteStmt) {
-//            operator = handleDelete(dbManager, deleteStmt);
-//        }
-        //todo: add condition of handleDelete
-        // functional
+        } else if (stmt instanceof Delete deleteStmt) {
+            operator = handleDelete(dbManager, deleteStmt);
+        } // functional
         else if (stmt instanceof CreateTable createTableStmt) {
             CreateTableExecutor createTable = new CreateTableExecutor(createTableStmt, dbManager, sql);
             createTable.execute();
@@ -67,7 +65,6 @@ public class LogicalPlanner {
         }
         return operator;
     }
-
 
     public static LogicalOperator handleSelect(DBManager dbManager, Select selectStmt) throws DBException {
         PlainSelect plainSelect = selectStmt.getPlainSelect();
@@ -107,9 +104,11 @@ public class LogicalPlanner {
                 updateStmt.getWhere());
     }
 
-//    private static LogicalOperator handleDelete(DBManager dbManager, Delete deleteStmt) {
-//        return new LogicalDeleteOperator(deleteStmt.getTable().getName(), deleteStmt.getWhere());
-//    }
-
-
+    private static LogicalOperator handleDelete(DBManager dbManager, Delete deleteStmt) throws DBException {
+        LogicalOperator root = new LogicalTableScanOperator(deleteStmt.getTable().getName(), dbManager);
+        if (deleteStmt.getWhere() != null) {
+            root = new LogicalFilterOperator(root, deleteStmt.getWhere());
+        }
+        return new LogicalDeleteOperator(root, deleteStmt.getTable().getName(), deleteStmt.getWhere(), dbManager);//don't know is it right to use dbmanager here
+    }
 }
