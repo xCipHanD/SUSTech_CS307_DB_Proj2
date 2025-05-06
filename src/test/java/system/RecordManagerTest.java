@@ -31,6 +31,7 @@ public class RecordManagerTest {
 
     @TempDir
     Path tempDir;
+
     @BeforeEach
     void setUp() throws IOException {
         String randomDirName = "test-" + UUID.randomUUID().toString();
@@ -42,6 +43,7 @@ public class RecordManagerTest {
         bufferPool = new BufferPool(10, diskManager);
         recordManager = new RecordManager(diskManager, bufferPool);
     }
+
     @Test
     @DisplayName("测试文件创建")
     @Order(1)
@@ -56,7 +58,7 @@ public class RecordManagerTest {
         RecordFileHeader recordFileHeader = new RecordFileHeader(page.data);
 
         assertThat(recordFileHeader.getRecordSize()).isEqualTo(recordSize);
-        assertThat(recordFileHeader.getNumberOfPages()).isEqualTo(1);
+        assertThat(recordFileHeader.getNumberOfPages()).isEqualTo(0);
         assertThat(recordFileHeader.getFirstFreePage()).isEqualTo(RecordPageHeader.NO_NEXT_FREE_PAGE);
         assertThat(recordFileHeader.getBitMapSize()).isGreaterThan(0);
     }

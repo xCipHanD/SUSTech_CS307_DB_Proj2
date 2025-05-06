@@ -9,11 +9,11 @@ import io.netty.buffer.ByteBuf;
 
 /**
  * 记录文件处理类，负责管理记录文件的读取、插入、删除和更新操作。
- * 
+ *
  * <p>
  * 该类使用 DiskManager 和 BufferPool 来处理文件的页和缓冲区，提供对记录的基本操作。
  * </p>
- * 
+ *
  * <p>
  * 主要功能包括：
  * </p>
@@ -23,7 +23,7 @@ import io.netty.buffer.ByteBuf;
  * <li>删除和更新现有记录</li>
  * <li>根据记录 ID 获取记录</li>
  * </ul>
- * 
+ *
  * <p>
  * 异常处理：在操作过程中，如果遇到文件损坏或页面超出范围等情况，将抛出 DBException 或 RuntimeException。
  * </p>
@@ -93,7 +93,6 @@ public class RecordFileHandle {
      * @return 插入记录的 RID（记录标识符）
      * @throws DBException      数据库异常
      * @throws RuntimeException 如果文件损坏，抛出运行时异常
-     * 
      *                          此方法首先创建一个记录页面句柄，并查找可以插入记录的槽位。如果没有可用的槽位，抛出异常。然后，将字节缓冲区中的数据写入找到的槽位，
      *                          并更新位图和页面头信息。如果页面已满，更新文件头以指向下一个空闲页面。最后，解除页面的固定状态并返回新插入记录的RID。
      */
@@ -173,10 +172,9 @@ public class RecordFileHandle {
 
     /**
      * 创建一个新的记录页面句柄。
-     * 
      * 此方法从缓冲池中分配一个新页面，并初始化该页面的位图和头信息。
      * 更新文件头以反映新页面的添加，并设置新页面的编号和下一个空闲页面编号。
-     * 
+     *
      * @return 新创建的记录页面句柄
      * @throws DBException 如果在创建新页面时发生数据库异常
      */
@@ -213,7 +211,7 @@ public class RecordFileHandle {
 
     /**
      * 释放给定的记录页面句柄，并更新文件头中的空闲页面信息。
-     * 
+     *
      * @param handle 要释放的记录页面句柄
      */
     private void deletePageHandle(RecordPageHandle handle) {
