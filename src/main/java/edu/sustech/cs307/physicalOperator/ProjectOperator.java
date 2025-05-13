@@ -5,17 +5,16 @@ import edu.sustech.cs307.meta.ColumnMeta;
 import edu.sustech.cs307.tuple.ProjectTuple;
 import edu.sustech.cs307.tuple.Tuple;
 import edu.sustech.cs307.meta.TabCol;
-import edu.sustech.cs307.value.ValueType;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public class ProjectOperator implements PhysicalOperator {
     private PhysicalOperator child;
-    private List<TabCol> outputSchema; // Use bounded wildcard
+    private List<TabCol> outputSchema;
     private Tuple currentTuple;
 
-    public ProjectOperator(PhysicalOperator child, List<TabCol> outputSchema) { // Use bounded wildcard
+    public ProjectOperator(PhysicalOperator child, List<TabCol> outputSchema) {
         this.child = child;
         this.outputSchema = outputSchema;
         if (this.outputSchema.size() == 1 && this.outputSchema.get(0).getTableName().equals("*")) {
@@ -66,7 +65,16 @@ public class ProjectOperator implements PhysicalOperator {
 
     @Override
     public ArrayList<ColumnMeta> outputSchema() {
-        //todo: return the fields only appear in select items.
-        return child.outputSchema();
+        ArrayList<ColumnMeta> finalOutputSchema = new ArrayList<>();
+        for (TabCol selectedCol : this.outputSchema) { // Iterate through the selected columns in desired order
+            for (ColumnMeta childColMeta : child.outputSchema()) { // Find the corresponding ColumnMeta from child
+                if (selectedCol.getTableName().equals(childColMeta.tableName)
+                        && selectedCol.getColumnName().equals(childColMeta.name)) {
+                    finalOutputSchema.add(childColMeta);
+                    break;
+                }
+            }
+        }
+        return finalOutputSchema;
     }
 }

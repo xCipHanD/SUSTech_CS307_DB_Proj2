@@ -11,7 +11,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.pmw.tinylog.Logger;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.Set;
@@ -64,7 +63,7 @@ public class DBManager {
         int columnWidth = Math.max(maxLength, 16);
         String border = "+" + "-".repeat(columnWidth) + "+";
         Logger.info(border);
-        Logger.info("|" + StringUtils.center("TABLES`", columnWidth) + "|");
+        Logger.info("|" + StringUtils.center("TABLES", columnWidth) + "|");
         Logger.info(border);
         for (String tableName : tableNames) {
             String centeredTableName = StringUtils.center(tableName, columnWidth);
@@ -78,11 +77,10 @@ public class DBManager {
             throw new DBException(ExceptionTypes.TableDoseNotExist(table_name));
         }
         TableMeta tableMeta = metaManager.getTable(table_name);
-        Map<String, ColumnMeta> columns = tableMeta.getColumns();
+        java.util.List<ColumnMeta> colList = tableMeta.columns_list;
 
-        int maxColumnNameLength = columns.keySet().stream().mapToInt(String::length).max().orElse(16);
-        int maxColumnTypeLength = columns.values().stream()
-                .mapToInt(columnMeta -> columnMeta.type.toString().length()).max().orElse(16);
+        int maxColumnNameLength = colList.stream().mapToInt(cm -> cm.name.length()).max().orElse(16);
+        int maxColumnTypeLength = colList.stream().mapToInt(cm -> cm.type.toString().length()).max().orElse(16);
 
         int columnNameWidth = Math.max(maxColumnNameLength, 16);
         int columnTypeWidth = Math.max(maxColumnTypeLength, 16);
@@ -92,9 +90,8 @@ public class DBManager {
         Logger.info("|" + StringUtils.center("FIELD", columnNameWidth) + "|"
                 + StringUtils.center("TYPE", columnTypeWidth) + "|");
 
-        for (var entry : columns.entrySet()) {
-            String columnName = entry.getKey();
-            ColumnMeta columnMeta = entry.getValue();
+        for (ColumnMeta columnMeta : colList) {
+            String columnName = columnMeta.name;
             String columnType = columnMeta.type.toString().toUpperCase();
             String centeredColumnName = StringUtils.center(columnName, columnNameWidth);
             String centeredColumnType = StringUtils.center(columnType, columnTypeWidth);
@@ -198,7 +195,7 @@ public class DBManager {
      * @throws DBException if an error occurs during the closing process
      */
     public void closeDBManager() throws DBException {
-        this.bufferPool.FlushAllPages(null);
+        this.bufferPool.FlushAllPages("");
         DiskManager.dump_disk_manager_meta(this.diskManager);
         this.metaManager.saveToJson();
     }

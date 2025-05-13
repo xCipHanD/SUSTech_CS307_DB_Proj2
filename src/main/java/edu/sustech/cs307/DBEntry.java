@@ -56,24 +56,26 @@ public class DBEntry {
         }
         String sql = "";
         boolean running = true;
+        // initialize LineReader once to retain buffer across iterations
+        LineReader scanner;
+        try {
+            scanner = LineReaderBuilder.builder()
+                    .terminal(
+                            TerminalBuilder.builder().dumb(true).build())
+                    .build();
+        } catch (Exception e) {
+            Logger.error("Failed to initialize input reader: " + e.getMessage());
+            return;
+        }
         try {
             while (running) {
                 try {
-                    LineReader scanner = LineReaderBuilder.builder()
-                            .terminal(
-                                    TerminalBuilder
-                                            .builder()
-                                            .dumb(true)
-                                            .build())
-                            .build();
                     StringBuilder sqlBuilder = new StringBuilder();
                     boolean isNewLine = true;
-                    Logger.info("CS307-DB> ");
                     while (true) {
                         String prompt = isNewLine ? "CS307-DB> " : "...> ";
                         String line = scanner.readLine(prompt).trim();
                         if (line.isEmpty() && sqlBuilder.length() == 0) {
-                            Logger.info("Empty input. Please enter a valid command or type 'help'.");
                             continue;
                         }
                         sqlBuilder.append(line).append(" ");
@@ -131,6 +133,14 @@ public class DBEntry {
             // persist the disk manager
             dbManager.getBufferPool().FlushAllPages("");
             Logger.error("Some error occurred. Exiting after persistdata...");
+        } finally {
+            if (dbManager != null) {
+                try {
+                    dbManager.closeDBManager();
+                } catch (DBException e2) {
+                    Logger.error("Error closing DBManager: " + e2.getMessage());
+                }
+            }
         }
     }
 

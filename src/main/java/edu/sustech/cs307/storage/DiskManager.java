@@ -9,7 +9,9 @@ import edu.sustech.cs307.exception.ExceptionTypes;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -29,28 +31,38 @@ public class DiskManager {
 
     private static final String DISK_MANAGER_META = "disk_manager_meta.json";
 
-    public static Map<String, Integer>  read_disk_manager_meta() throws DBException {
-        Path path = Path.of(String.format("%s/%s", DBEntry.DB_NAME, DISK_MANAGER_META));
-        // read the meta file
-        File META_FILE = new File(path.toString());
-        if (!META_FILE.exists()) {
-            Logger.info("File does not exist, creating a new one...");
-            return Map.of();
-        }
-        try (Reader reader = new FileReader(META_FILE)) {
-            TypeReference<Map<String, Integer>> typeRef = new TypeReference<>() {
-            };
-            ObjectMapper objectMapper = new ObjectMapper();
-            Map<String, Integer> loadedTables = objectMapper.readValue(reader, typeRef);
-            if (loadedTables != null) {
-                return new HashMap<String, Integer>(loadedTables);
-            } else {
-                throw new DBException(ExceptionTypes.UnableLoadMetadata("Failed to load metadata"));
+    public static Map<String, Integer> read_disk_manager_meta() throws DBException {
+        try {
+            // 确保数据库根目录存在
+            if (!Files.exists(Paths.get(DBEntry.DB_NAME))) {
+                Files.createDirectories(Paths.get(DBEntry.DB_NAME));
             }
-        } catch (Exception e) {
+            Path metaPath = Paths.get(DBEntry.DB_NAME, DISK_MANAGER_META);
+            File META_FILE = metaPath.toFile();
+            if (!META_FILE.exists()) {
+                Logger.info("Meta file 不存在，创建新的空 meta 文件...");
+                // 创建空文件并写入 {}
+                try (Writer w = new FileWriter(META_FILE)) {
+                    new ObjectMapper().writeValue(w, Map.of());
+                }
+                return new HashMap<>();
+            }
+            // 现有逻辑：读取 JSON
+            try (Reader reader = new FileReader(META_FILE)) {
+                TypeReference<Map<String, Integer>> typeRef = new TypeReference<>() {
+                };
+                ObjectMapper objectMapper = new ObjectMapper();
+                Map<String, Integer> loaded = objectMapper.readValue(reader, typeRef);
+                if (loaded != null) {
+                    return new HashMap<>(loaded);
+                } else {
+                    throw new DBException(ExceptionTypes.UnableLoadMetadata("Failed to load metadata"));
+                }
+            }
+        } catch (IOException e) {
             throw new DBException(ExceptionTypes.UnableLoadMetadata(e.getMessage()));
         }
-    };
+    }
 
     /**
      * 将 DiskManager 的元数据转储到指定的元文件中。
@@ -59,15 +71,19 @@ public class DiskManager {
      * @throws DBException 如果在写入元数据时发生错误
      */
     public static void dump_disk_manager_meta(DiskManager disk_manager) throws DBException {
-        Map<String, Integer> filePages = disk_manager.filePages;
-        Path path = Path.of(String.format("%s/%s", DBEntry.DB_NAME, DISK_MANAGER_META));
-        // write the meta file
-        File META_FILE = new File(path.toString());
-        try (Writer writer = new FileWriter(META_FILE)) {
-            ObjectMapper objectMapper = new ObjectMapper();
-            objectMapper.writeValue(writer, filePages);
-        } catch (Exception e) {
-            throw new DBException(ExceptionTypes.UnableLoadMetadata(e.getMessage()));
+        try {
+            // 确保数据库根目录存在
+            if (!Files.exists(Paths.get(DBEntry.DB_NAME))) {
+                Files.createDirectories(Paths.get(DBEntry.DB_NAME));
+            }
+            Path metaPath = Paths.get(DBEntry.DB_NAME, DISK_MANAGER_META);
+            File META_FILE = metaPath.toFile();
+            try (Writer writer = new FileWriter(META_FILE)) {
+                ObjectMapper objectMapper = new ObjectMapper();
+                objectMapper.writeValue(writer, disk_manager.filePages);
+            }
+        } catch (IOException e) {
+            throw new DBException(ExceptionTypes.UnableSaveMetadata(e.getMessage()));
         }
     }
 
