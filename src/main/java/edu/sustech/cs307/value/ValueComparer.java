@@ -30,9 +30,13 @@ public class ValueComparer {
                 Long i2 = (Long) v2.value;
                 return Long.compare(i1, i2);
             case FLOAT:
-                Double d1 = (Double) v1.value;
-                Double d2 = (Double) v2.value;
-                return Double.compare(d1, d2);
+                Float d1 = (Float) v1.value;
+                Float d2 = (Float) v2.value;
+                return Float.compare(d1, d2);
+            case DOUBLE: // Add DOUBLE case
+                Double db1 = (Double) v1.value;
+                Double db2 = (Double) v2.value;
+                return Double.compare(db1, db2);
             case CHAR:
                 String s1 = (String) v1.value;
                 String s2 = (String) v2.value;

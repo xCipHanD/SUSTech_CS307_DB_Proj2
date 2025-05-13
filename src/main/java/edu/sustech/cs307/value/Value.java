@@ -6,7 +6,8 @@ public class Value {
     public Object value;
     public ValueType type;
     public static final int INT_SIZE = 8;
-    public static final int FLOAT_SIZE = 8;
+    public static final int FLOAT_SIZE = 4;
+    public static final int DOUBLE_SIZE = 8;
     public static final int CHAR_SIZE = 64;
 
     public Value(Object value, ValueType type) {
@@ -19,9 +20,14 @@ public class Value {
         type = ValueType.INTEGER;
     }
 
-    public Value(Double value) {
+    public Value(Float value) {
         this.value = value;
         type = ValueType.FLOAT;
+    }
+
+    public Value(Double value) {
+        this.value = value;
+        type = ValueType.DOUBLE;
     }
 
     public Value(String value) {
@@ -38,14 +44,19 @@ public class Value {
     public byte[] ToByte() {
         return switch (type) {
             case INTEGER -> {
-                ByteBuffer buffer1 = ByteBuffer.allocate(8);
+                ByteBuffer buffer1 = ByteBuffer.allocate(INT_SIZE);
                 buffer1.putLong((long) value);
                 yield buffer1.array();
             }
             case FLOAT -> {
-                ByteBuffer buffer2 = ByteBuffer.allocate(8);
-                buffer2.putDouble((double) value);
+                ByteBuffer buffer2 = ByteBuffer.allocate(FLOAT_SIZE); 
+                buffer2.putFloat((float) value);
                 yield buffer2.array();
+            }
+            case DOUBLE -> {
+                ByteBuffer bufferD = ByteBuffer.allocate(DOUBLE_SIZE);
+                bufferD.putDouble((double) value);
+                yield bufferD.array();
             }
             case CHAR -> {
                 String str = (String) value;
@@ -74,7 +85,11 @@ public class Value {
             }
             case FLOAT -> {
                 ByteBuffer buffer2 = ByteBuffer.wrap(bytes);
-                yield new Value(buffer2.getDouble());
+                yield new Value(buffer2.getFloat());
+            }
+            case DOUBLE -> {
+                ByteBuffer bufferD = ByteBuffer.wrap(bytes);
+                yield new Value(bufferD.getDouble());
             }
             case CHAR -> {
                 ByteBuffer buffer3 = ByteBuffer.wrap(bytes);
@@ -91,7 +106,7 @@ public class Value {
     @Override
     public String toString() {
         switch (type) {
-            case INTEGER, FLOAT ->{
+            case INTEGER, FLOAT, DOUBLE -> {
                 return this.value.toString();
             }
             case CHAR -> {

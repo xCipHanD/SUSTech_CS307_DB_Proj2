@@ -60,14 +60,17 @@ public class DBManager {
      */
     public void showTables() {
         Set<String> tableNames = metaManager.getTableNames();
-        Logger.info("+----------------+");
-        Logger.info("|     TABLE      |");
-        Logger.info("+----------------+");
+        int maxLength = tableNames.stream().mapToInt(String::length).max().orElse(16);
+        int columnWidth = Math.max(maxLength, 16);
+        String border = "+" + "-".repeat(columnWidth) + "+";
+        Logger.info(border);
+        Logger.info("|" + StringUtils.center("TABLE", columnWidth) + "|");
+        Logger.info(border);
         for (String tableName : tableNames) {
-            String centeredTableName = StringUtils.center(tableName, 16);
+            String centeredTableName = StringUtils.center(tableName, columnWidth);
             Logger.info("|" + centeredTableName + "|");
         }
-        Logger.info("+----------------+");
+        Logger.info(border);
     }
 
     public void descTable(String table_name) throws DBException {
@@ -76,18 +79,29 @@ public class DBManager {
         }
         TableMeta tableMeta = metaManager.getTable(table_name);
         Map<String, ColumnMeta> columns = tableMeta.getColumns();
-        Logger.info("+----------------+----------------+");
-        Logger.info("|     TABLE      |    COLUMN TYPE  |");
-        Logger.info("+----------------+----------------+");
+
+        int maxColumnNameLength = columns.keySet().stream().mapToInt(String::length).max().orElse(16);
+        int maxColumnTypeLength = columns.values().stream()
+                .mapToInt(columnMeta -> columnMeta.type.toString().length()).max().orElse(16);
+
+        int columnNameWidth = Math.max(maxColumnNameLength, 16);
+        int columnTypeWidth = Math.max(maxColumnTypeLength, 16);
+
+        String border = "+" + "-".repeat(columnNameWidth) + "+" + "-".repeat(columnTypeWidth) + "+";
+        Logger.info(border);
+        Logger.info("|" + StringUtils.center("FIELD", columnNameWidth) + "|"
+                + StringUtils.center("TYPE", columnTypeWidth) + "|");
+        Logger.info(border);
+
         for (var entry : columns.entrySet()) {
             String columnName = entry.getKey();
             ColumnMeta columnMeta = entry.getValue();
-            String columnType = columnMeta.type.toString();
-            String centeredColumnName = StringUtils.center(columnName, 16);
-            String centeredColumnType = StringUtils.center(columnType, 16);
+            String columnType = columnMeta.type.toString().toUpperCase();
+            String centeredColumnName = StringUtils.center(columnName, columnNameWidth);
+            String centeredColumnType = StringUtils.center(columnType, columnTypeWidth);
             Logger.info("|" + centeredColumnName + "|" + centeredColumnType + "|");
         }
-        Logger.info("+----------------+----------------+");
+        Logger.info(border);
     }
 
     /**
@@ -125,7 +139,6 @@ public class DBManager {
      *                     errors during deletion
      */
     public void dropTable(String table_name) throws DBException {
-        // todo: finish drop table method
         if (!isTableExists(table_name)) {
             throw new DBException(ExceptionTypes.TableDoseNotExist(table_name));
         }

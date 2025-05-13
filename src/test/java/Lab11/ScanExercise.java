@@ -2,7 +2,6 @@ package Lab11;
 
 import edu.sustech.cs307.exception.DBException;
 import edu.sustech.cs307.meta.MetaManager;
-import edu.sustech.cs307.meta.TabCol;
 import edu.sustech.cs307.meta.TableMeta;
 import edu.sustech.cs307.record.*;
 import edu.sustech.cs307.record.Record;
@@ -14,7 +13,6 @@ import edu.sustech.cs307.tuple.TableTuple;
 import edu.sustech.cs307.value.Value;
 import org.pmw.tinylog.Logger;
 
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -37,7 +35,6 @@ public class ScanExercise {
             int recordsPerPage = fileHandle.getFileHeader().getNumberOfRecordsPrePage();
             System.out.println("Page Count: " + pageCount);
             System.out.println("Records Per Page: " + recordsPerPage);
-            // TODO: complete the code here
             TableMeta tableMeta = metaManager.getTable("t");
             for (int i = 1; i <= pageCount; i++) {
                 RecordPageHandle pageHandle = fileHandle.FetchPageHandle(i);

@@ -38,7 +38,7 @@ public class CreateTableExecutor implements DMLExecutor {
             // transform the column definition to ColumnMeta
             // we only accept the char, int, float type
             String colName = col.getColumnName();
-            if (colName.isEmpty() || colName.length() > 10) {
+            if (colName.isEmpty() || colName.length() > 16) {
                 throw new DBException(
                         ExceptionTypes.InvalidSQL(sql, String.format("INVALID COLUMN NAME = %s", colName)));
             }
@@ -52,8 +52,12 @@ public class CreateTableExecutor implements DMLExecutor {
             } else if (colType.getDataType().equalsIgnoreCase("float")) {
                 colMapping.add(new ColumnMeta(table, colName, ValueType.FLOAT, Value.FLOAT_SIZE, offset));
                 offset += Value.FLOAT_SIZE;
+            } else if (colType.getDataType().equalsIgnoreCase("double")) {
+                colMapping.add(new ColumnMeta(table, colName, ValueType.DOUBLE, Value.DOUBLE_SIZE, offset));
+                offset += Value.DOUBLE_SIZE;
             } else {
-                throw new DBException(ExceptionTypes.UnsupportedCommand(String.format("CREATE TABLE %s", table)));
+                throw new DBException(ExceptionTypes.UnsupportedCommand(
+                        String.format("CREATE TABLE %s with unsupported type %s", table, colType.getDataType())));
             }
         }
         dbManager.createTable(table, colMapping);

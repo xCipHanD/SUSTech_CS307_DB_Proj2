@@ -67,32 +67,39 @@ public class DBEntry {
                                             .build())
                             .build();
                     StringBuilder sqlBuilder = new StringBuilder();
+                    boolean isNewLine = true;
                     Logger.info("CS307-DB> ");
                     while (true) {
-                        String line = scanner.readLine();
-                        sqlBuilder.append(line.trim() + " ");
-                        if (line.trim().endsWith(";")) {
+                        String prompt = isNewLine ? "CS307-DB> " : "...> ";
+                        String line = scanner.readLine(prompt).trim();
+                        if (line.isEmpty() && sqlBuilder.length() == 0) {
+                            Logger.info("Empty input. Please enter a valid command or type 'help'.");
+                            continue;
+                        }
+                        sqlBuilder.append(line).append(" ");
+                        if (line.endsWith(";")) {
                             break;
                         }
-                        Logger.info("...>");
+                        isNewLine = false;
                     }
-                    sql = sqlBuilder.toString();
-                    Logger.info(sql);
-                    if (sql.equalsIgnoreCase("exit")) {
+                    sql = sqlBuilder.toString().trim();
+                    Logger.info("Executing: " + sql);
+                    if (sql.equalsIgnoreCase("exit;")) {
                         running = false;
+                        Logger.info("Exiting CS307-DB. Goodbye!");
                         continue;
-                    } else if (sql.equalsIgnoreCase("help")) {
+                    } else if (sql.equalsIgnoreCase("help;")) {
                         printHelp();
                         continue;
                     }
                 } catch (Exception e) {
-                    Logger.error(e.getMessage());
-                    Logger.error("An error occurred. Exiting....");
+                    Logger.error("Input error: " + e.getMessage());
+                    Logger.error("Please try again.");
+                    continue;
                 }
                 try {
                     LogicalOperator operator = LogicalPlanner.resolveAndPlan(dbManager, sql);
                     if (operator == null) {
-                        Logger.info("No operator generated.");
                         continue;
                     }
                     PhysicalOperator physicalOperator = PhysicalPlanner.generateOperator(dbManager, operator);
@@ -114,8 +121,8 @@ public class DBEntry {
                     physicalOperator.Close();
                     dbManager.getBufferPool().FlushAllPages("");
                 } catch (DBException e) {
-                    Logger.error(e.getMessage());
-                    Logger.error("An error occurred. Please try again.");
+                    Logger.error("Execution error: " + e.getMessage());
+                    Logger.error("Please check your SQL syntax or database state.");
                     Logger.error(Arrays.toString(e.getStackTrace()));
                 }
             }
@@ -148,7 +155,6 @@ public class DBEntry {
     }
 
     private static String getSperator(int width) {
-        // ───────────────
         StringBuilder line = new StringBuilder("+");
         for (int i = 0; i < width; i++) {
             line.append("───────────────");

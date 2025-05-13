@@ -30,7 +30,7 @@ public class UpdateOperator implements PhysicalOperator {
     private boolean isDone;
 
     public UpdateOperator(PhysicalOperator inputOperator, String tableName, UpdateSet updateSet,
-                          Expression whereExpr) {
+            Expression whereExpr) {
         if (!(inputOperator instanceof SeqScanOperator seqScanOperator)) {
             throw new RuntimeException("The delete operator only accepts SeqScanOperator as input");
         }
@@ -67,7 +67,8 @@ public class UpdateOperator implements PhysicalOperator {
                     int index = -1;
                     for (int j = 0; j < schema.length; j++) {
                         if (schema[j].getColumnName().equalsIgnoreCase(targetColumn)
-                                && schema[j].getTableName().equalsIgnoreCase(targetTable)) {
+                                && (schema[j].getTableName().equalsIgnoreCase(targetTable)
+                                        || schema[j].getTableName().equalsIgnoreCase(this.tableName))) {
                             index = j;
                             break;
                         }

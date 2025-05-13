@@ -88,7 +88,7 @@ public abstract class Tuple {
         if (expr instanceof StringValue) {
             return new Value(((StringValue) expr).getValue(), ValueType.CHAR);
         } else if (expr instanceof DoubleValue) {
-            return new Value(((DoubleValue) expr).getValue(), ValueType.FLOAT);
+            return new Value(((DoubleValue) expr).getValue(), ValueType.DOUBLE);
         } else if (expr instanceof LongValue) {
             return new Value(((LongValue) expr).getValue(), ValueType.INTEGER);
         }
@@ -99,7 +99,7 @@ public abstract class Tuple {
         if (expr instanceof StringValue) {
             return new Value(((StringValue) expr).getValue(), ValueType.CHAR);
         } else if (expr instanceof DoubleValue) {
-            return new Value(((DoubleValue) expr).getValue(), ValueType.FLOAT);
+            return new Value(((DoubleValue) expr).getValue(), ValueType.DOUBLE);
         } else if (expr instanceof LongValue) {
             return new Value(((LongValue) expr).getValue(), ValueType.INTEGER);
         } else if (expr instanceof Column) {

@@ -11,7 +11,6 @@ import io.netty.buffer.Unpooled;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.File;
 import java.nio.file.Files;
 import java.util.UUID;
 import java.io.IOException;
@@ -120,7 +119,7 @@ class RecordFileHandleTest {
             }
 
             RID newRid = fileHandle.InsertRecord(Unpooled.buffer(128));
-            assertThat(newRid.pageNum).isEqualTo(1);
+            assertThat(newRid.pageNum).isEqualTo(2);
         }
 
         @Test

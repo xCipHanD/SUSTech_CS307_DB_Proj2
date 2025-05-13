@@ -6,6 +6,7 @@ import edu.sustech.cs307.logicalOperator.dml.DropTableExecutor;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.parser.CCJSqlParserManager;
 import net.sf.jsqlparser.parser.JSqlParser;
+import net.sf.jsqlparser.statement.DescribeStatement;
 import net.sf.jsqlparser.statement.ExplainStatement;
 import net.sf.jsqlparser.statement.ShowColumnsStatement;
 import net.sf.jsqlparser.statement.ShowStatement;
@@ -69,9 +70,17 @@ public class LogicalPlanner {
             ShowColumnsExecutor showColumnsExecutor = new ShowColumnsExecutor(showColumnsStatement, dbManager);
             showColumnsExecutor.execute();
             return null;
+        } else if (stmt instanceof ExplainStatement explainStatement) {
+            ExplainExecutor explainExecutor = new ExplainExecutor(explainStatement, dbManager);
+            explainExecutor.execute();
+            return null;
         } else if (stmt instanceof ShowTablesStatement) {
             ShowTablesExecutor showTablesExecutor = new ShowTablesExecutor((ShowTablesStatement) stmt, dbManager);
             showTablesExecutor.execute();
+            return null;
+        } else if (stmt instanceof DescribeStatement) {
+            ShowColumnsExecutor showColumnsExecutor = new ShowColumnsExecutor((DescribeStatement) stmt, dbManager);
+            showColumnsExecutor.execute();
             return null;
         } else {
             throw new DBException(ExceptionTypes.UnsupportedCommand((stmt.toString())));

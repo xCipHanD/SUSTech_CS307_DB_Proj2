@@ -128,7 +128,7 @@ public class PhysicalPlanner {
         ExpressionList<?> valuesList = ((Values) logicalInsertOp.values).getExpressions();
         if (columns.size() != valuesList.size()) {
             var element = valuesList.get(0);
-            if (element instanceof ParenthesedExpressionList<?> parenthesed) {
+            if (element instanceof ParenthesedExpressionList<?>) {
                 // check the children reexpressions
                 for (Expression expr : valuesList) {
                     if (expr instanceof ParenthesedExpressionList<?> expressionList) {
@@ -168,11 +168,16 @@ public class PhysicalPlanner {
                     value_str = value_str.substring(0, 64);
                 }
                 values.add(new Value(value_str));
-            } else if (expr instanceof DoubleValue float_value) {
-                if (tableMeta.columns_list.get(i).type != ValueType.FLOAT) {
+            } else if (expr instanceof DoubleValue float_value) { // This should handle both FLOAT and DOUBLE from
+                                                                  // JSqlParser
+                // We need to check the target column type to differentiate
+                if (tableMeta.columns_list.get(i).type == ValueType.FLOAT) {
+                    values.add(new Value((float) float_value.getValue())); // Create a FLOAT Value
+                } else if (tableMeta.columns_list.get(i).type == ValueType.DOUBLE) {
+                    values.add(new Value(float_value.getValue())); // Create a DOUBLE Value
+                } else {
                     throw new DBException(ExceptionTypes.InsertColumnTypeMismatch());
                 }
-                values.add(new Value(float_value.getValue()));
             } else if (expr instanceof LongValue long_value) {
                 if (tableMeta.columns_list.get(i).type != ValueType.INTEGER) {
                     throw new DBException(ExceptionTypes.InsertColumnTypeMismatch());
@@ -186,13 +191,14 @@ public class PhysicalPlanner {
         }
     }
 
-
-    private static PhysicalOperator handleUpdate(DBManager dbManager, LogicalUpdateOperator logicalUpdateOp) throws DBException {
+    private static PhysicalOperator handleUpdate(DBManager dbManager, LogicalUpdateOperator logicalUpdateOp)
+            throws DBException {
         // TODO: Implement handleUpdate
         PhysicalOperator scanner = generateOperator(dbManager, logicalUpdateOp.getChild());
-        if (logicalUpdateOp.getColumns().size() != 1 ) {
+        if (logicalUpdateOp.getColumns().size() != 1) {
             throw new DBException(ExceptionTypes.InvalidSQL("INSERT", "Unsupported expression list"));
         }
-        return new UpdateOperator(scanner, logicalUpdateOp.getTableName(), logicalUpdateOp.getColumns().get(0), logicalUpdateOp.getExpression());
+        return new UpdateOperator(scanner, logicalUpdateOp.getTableName(), logicalUpdateOp.getColumns().get(0),
+                logicalUpdateOp.getExpression());
     }
 }
