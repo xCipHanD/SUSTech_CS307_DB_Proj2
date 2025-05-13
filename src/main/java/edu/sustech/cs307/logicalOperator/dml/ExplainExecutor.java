@@ -5,22 +5,21 @@ import edu.sustech.cs307.exception.DBException;
 import edu.sustech.cs307.optimizer.LogicalPlanner;
 import edu.sustech.cs307.logicalOperator.LogicalOperator;
 
-import net.sf.jsqlparser.statement.ExplainStatement;
-
 import org.pmw.tinylog.Logger;
 
 public class ExplainExecutor implements DMLExecutor {
 
-    private final ExplainStatement explainStatement;
+    private final String sql;
     private final DBManager dbManager;
 
-    public ExplainExecutor(ExplainStatement explainStatement, DBManager dbManager) {
-        this.explainStatement = explainStatement;
+    public ExplainExecutor(DBManager dbManager, String sql) {
         this.dbManager = dbManager;
+        this.sql = sql.strip().replaceFirst("(?i)^explain", "");
     }
 
     @Override
     public void execute() throws DBException {
-       //todo: finish this function here, and add log info
+        LogicalOperator logicalOperator = LogicalPlanner.resolveAndPlan(dbManager, sql);
+        Logger.info(logicalOperator.toString());
     }
 }

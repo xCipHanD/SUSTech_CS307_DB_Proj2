@@ -49,7 +49,8 @@ public class LogicalPlanner {
         } // TODO: modify the delete operator
         else if (stmt instanceof Delete deleteStmt) {
             operator = handleDelete(dbManager, deleteStmt);
-        } // functional
+        }
+        // functional
         else if (stmt instanceof CreateTable createTableStmt) {
             CreateTableExecutor createTable = new CreateTableExecutor(createTableStmt, dbManager, sql);
             createTable.execute();
@@ -58,8 +59,8 @@ public class LogicalPlanner {
             DropTableExecutor dropTable = new DropTableExecutor(dropTableStmt, dbManager);
             dropTable.execute();
             return null;
-        } else if (stmt instanceof ExplainStatement explainStatement) {
-            ExplainExecutor explainExecutor = new ExplainExecutor(explainStatement, dbManager);
+        } else if (stmt instanceof ExplainStatement) {
+            ExplainExecutor explainExecutor = new ExplainExecutor(dbManager, sql);
             explainExecutor.execute();
             return null;
         } else if (stmt instanceof ShowStatement showStatement) {
@@ -69,10 +70,6 @@ public class LogicalPlanner {
         } else if (stmt instanceof ShowColumnsStatement showColumnsStatement) {
             ShowColumnsExecutor showColumnsExecutor = new ShowColumnsExecutor(showColumnsStatement, dbManager);
             showColumnsExecutor.execute();
-            return null;
-        } else if (stmt instanceof ExplainStatement explainStatement) {
-            ExplainExecutor explainExecutor = new ExplainExecutor(explainStatement, dbManager);
-            explainExecutor.execute();
             return null;
         } else if (stmt instanceof ShowTablesStatement) {
             ShowTablesExecutor showTablesExecutor = new ShowTablesExecutor((ShowTablesStatement) stmt, dbManager);
@@ -131,14 +128,15 @@ public class LogicalPlanner {
         if (deleteStmt.getWhere() != null) {
             root = new LogicalFilterOperator(root, deleteStmt.getWhere());
         }
-        return new LogicalDeleteOperator(root, deleteStmt.getTable().getName(), deleteStmt.getWhere(), dbManager);// don't
-                                                                                                                  // know
-                                                                                                                  // is
-                                                                                                                  // it
-                                                                                                                  // right
-                                                                                                                  // to
-                                                                                                                  // use
-                                                                                                                  // dbmanager
-                                                                                                                  // here
+        return new LogicalDeleteOperator(root, deleteStmt.getTable().getName(), deleteStmt.getWhere(), dbManager);//
+        // don't
+        // know
+        // is
+        // it
+        // right
+        // to
+        // use
+        // dbmanager
+        // here
     }
 }

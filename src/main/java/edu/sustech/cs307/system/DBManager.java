@@ -64,7 +64,7 @@ public class DBManager {
         int columnWidth = Math.max(maxLength, 16);
         String border = "+" + "-".repeat(columnWidth) + "+";
         Logger.info(border);
-        Logger.info("|" + StringUtils.center("TABLE", columnWidth) + "|");
+        Logger.info("|" + StringUtils.center("TABLES`", columnWidth) + "|");
         Logger.info(border);
         for (String tableName : tableNames) {
             String centeredTableName = StringUtils.center(tableName, columnWidth);
@@ -91,7 +91,6 @@ public class DBManager {
         Logger.info(border);
         Logger.info("|" + StringUtils.center("FIELD", columnNameWidth) + "|"
                 + StringUtils.center("TYPE", columnTypeWidth) + "|");
-        Logger.info(border);
 
         for (var entry : columns.entrySet()) {
             String columnName = entry.getKey();
