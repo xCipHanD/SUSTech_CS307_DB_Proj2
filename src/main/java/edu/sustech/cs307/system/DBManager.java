@@ -13,6 +13,8 @@ import org.pmw.tinylog.Logger;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.Set;
 
 public class DBManager {
     private final MetaManager metaManager;
@@ -22,7 +24,7 @@ public class DBManager {
     private final RecordManager recordManager;
 
     public DBManager(DiskManager diskManager, BufferPool bufferPool, RecordManager recordManager,
-                     MetaManager metaManager) {
+            MetaManager metaManager) {
         this.diskManager = diskManager;
         this.bufferPool = bufferPool;
         this.recordManager = recordManager;
@@ -57,18 +59,35 @@ public class DBManager {
      * Each table name is displayed in a separate row within the ASCII borders.
      */
     public void showTables() {
-        throw new RuntimeException("Not implement");
-        //todo: complete show table
-        // | -- TABLE -- |
-        // | -- ${table} -- |
-        // | ----------- |
+        Set<String> tableNames = metaManager.getTableNames();
+        Logger.info("+----------------+");
+        Logger.info("|     TABLE      |");
+        Logger.info("+----------------+");
+        for (String tableName : tableNames) {
+            String centeredTableName = StringUtils.center(tableName, 16);
+            Logger.info("|" + centeredTableName + "|");
+        }
+        Logger.info("+----------------+");
     }
 
-    public void descTable(String table_name) {
-        throw new RuntimeException("Not implemented yet");
-        //todo: complete describe table
-        // | -- TABLE Field -- | -- Column Type --|
-        // | --  ${table field} --| -- ${table type} --|
+    public void descTable(String table_name) throws DBException {
+        if (!isTableExists(table_name)) {
+            throw new DBException(ExceptionTypes.TableDoseNotExist(table_name));
+        }
+        TableMeta tableMeta = metaManager.getTable(table_name);
+        Map<String, ColumnMeta> columns = tableMeta.getColumns();
+        Logger.info("+----------------+----------------+");
+        Logger.info("|     TABLE      |    COLUMN TYPE  |");
+        Logger.info("+----------------+----------------+");
+        for (var entry : columns.entrySet()) {
+            String columnName = entry.getKey();
+            ColumnMeta columnMeta = entry.getValue();
+            String columnType = columnMeta.type.toString();
+            String centeredColumnName = StringUtils.center(columnName, 16);
+            String centeredColumnType = StringUtils.center(columnType, 16);
+            Logger.info("|" + centeredColumnName + "|" + centeredColumnType + "|");
+        }
+        Logger.info("+----------------+----------------+");
     }
 
     /**

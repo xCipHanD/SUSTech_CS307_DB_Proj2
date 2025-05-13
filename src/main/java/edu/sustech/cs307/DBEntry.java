@@ -54,7 +54,6 @@ public class DBEntry {
             Logger.error("An error occurred during initializing. Exiting....");
             return;
         }
-
         String sql = "";
         boolean running = true;
         try {
@@ -65,12 +64,20 @@ public class DBEntry {
                                     TerminalBuilder
                                             .builder()
                                             .dumb(true)
-                                            .build()
-                            )
+                                            .build())
                             .build();
+                    StringBuilder sqlBuilder = new StringBuilder();
                     Logger.info("CS307-DB> ");
-                    // TODO : multiline input (split by ';')
-                    sql = scanner.readLine();
+                    while (true) {
+                        String line = scanner.readLine();
+                        sqlBuilder.append(line.trim() + " ");
+                        if (line.trim().endsWith(";")) {
+                            break;
+                        }
+                        Logger.info("...>");
+                    }
+                    sql = sqlBuilder.toString();
+                    Logger.info(sql);
                     if (sql.equalsIgnoreCase("exit")) {
                         running = false;
                         continue;

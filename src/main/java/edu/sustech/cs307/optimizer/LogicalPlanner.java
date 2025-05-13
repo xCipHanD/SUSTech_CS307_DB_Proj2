@@ -7,10 +7,12 @@ import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.parser.CCJSqlParserManager;
 import net.sf.jsqlparser.parser.JSqlParser;
 import net.sf.jsqlparser.statement.ExplainStatement;
+import net.sf.jsqlparser.statement.ShowColumnsStatement;
 import net.sf.jsqlparser.statement.ShowStatement;
 import net.sf.jsqlparser.statement.Statement;
 import net.sf.jsqlparser.statement.drop.Drop;
 import net.sf.jsqlparser.statement.select.*;
+import net.sf.jsqlparser.statement.show.ShowTablesStatement;
 import net.sf.jsqlparser.statement.update.Update;
 import net.sf.jsqlparser.statement.insert.Insert;
 import net.sf.jsqlparser.statement.delete.Delete;
@@ -21,7 +23,9 @@ import edu.sustech.cs307.logicalOperator.*;
 import edu.sustech.cs307.system.DBManager;
 import edu.sustech.cs307.logicalOperator.dml.CreateTableExecutor;
 import edu.sustech.cs307.logicalOperator.dml.ExplainExecutor;
+import edu.sustech.cs307.logicalOperator.dml.ShowColumnsExecutor;
 import edu.sustech.cs307.logicalOperator.dml.ShowDatabaseExecutor;
+import edu.sustech.cs307.logicalOperator.dml.ShowTablesExecutor;
 import edu.sustech.cs307.exception.DBException;
 
 public class LogicalPlanner {
@@ -41,8 +45,8 @@ public class LogicalPlanner {
             operator = handleInsert(dbManager, insertStmt);
         } else if (stmt instanceof Update updateStmt) {
             operator = handleUpdate(dbManager, updateStmt);
-        }//TODO: modify the delete operator
-         else if (stmt instanceof Delete deleteStmt) {
+        } // TODO: modify the delete operator
+        else if (stmt instanceof Delete deleteStmt) {
             operator = handleDelete(dbManager, deleteStmt);
         } // functional
         else if (stmt instanceof CreateTable createTableStmt) {
@@ -60,6 +64,14 @@ public class LogicalPlanner {
         } else if (stmt instanceof ShowStatement showStatement) {
             ShowDatabaseExecutor showDatabaseExecutor = new ShowDatabaseExecutor(showStatement);
             showDatabaseExecutor.execute();
+            return null;
+        } else if (stmt instanceof ShowColumnsStatement showColumnsStatement) {
+            ShowColumnsExecutor showColumnsExecutor = new ShowColumnsExecutor(showColumnsStatement, dbManager);
+            showColumnsExecutor.execute();
+            return null;
+        } else if (stmt instanceof ShowTablesStatement) {
+            ShowTablesExecutor showTablesExecutor = new ShowTablesExecutor((ShowTablesStatement) stmt, dbManager);
+            showTablesExecutor.execute();
             return null;
         } else {
             throw new DBException(ExceptionTypes.UnsupportedCommand((stmt.toString())));
@@ -110,6 +122,14 @@ public class LogicalPlanner {
         if (deleteStmt.getWhere() != null) {
             root = new LogicalFilterOperator(root, deleteStmt.getWhere());
         }
-        return new LogicalDeleteOperator(root, deleteStmt.getTable().getName(), deleteStmt.getWhere(), dbManager);//don't know is it right to use dbmanager here
+        return new LogicalDeleteOperator(root, deleteStmt.getTable().getName(), deleteStmt.getWhere(), dbManager);// don't
+                                                                                                                  // know
+                                                                                                                  // is
+                                                                                                                  // it
+                                                                                                                  // right
+                                                                                                                  // to
+                                                                                                                  // use
+                                                                                                                  // dbmanager
+                                                                                                                  // here
     }
 }
