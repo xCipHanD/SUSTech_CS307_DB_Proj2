@@ -12,13 +12,14 @@ public class LogicalDeleteOperator extends LogicalOperator {
     private final DBManager dbManager;
     private final Expression whereCondition;
 
-    public LogicalDeleteOperator(LogicalOperator input, String tableName, Expression whereCondition, DBManager dbManager) throws DBException {
+    public LogicalDeleteOperator(LogicalOperator input, String tableName, Expression whereCondition,
+            DBManager dbManager) throws DBException {
         super(Collections.singletonList(input)); // Single input operator (e.g., TableScan or Filter)
         this.tableName = tableName;
         this.dbManager = dbManager; // Reuse DBManager from input operator
         this.whereCondition = whereCondition;
         if (!dbManager.isTableExists(tableName)) {
-            throw new DBException(ExceptionTypes.TableDoseNotExist(tableName));
+            throw new DBException(ExceptionTypes.TableDoesNotExist(tableName));
         }
     }
 

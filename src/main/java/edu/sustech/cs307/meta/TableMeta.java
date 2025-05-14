@@ -42,7 +42,9 @@ public class TableMeta {
     }
 
     @JsonCreator
-    public TableMeta(@JsonProperty("tableName") String tableName, @JsonProperty("columns_list") ArrayList<ColumnMeta> columns_list, @JsonProperty("indexes")  Map<String, IndexType> indexes) {
+    public TableMeta(@JsonProperty("tableName") String tableName,
+            @JsonProperty("columns_list") ArrayList<ColumnMeta> columns_list,
+            @JsonProperty("indexes") Map<String, IndexType> indexes) {
         this.tableName = tableName;
         this.columns_list = columns_list;
         this.columns = new HashMap<>();
@@ -62,7 +64,7 @@ public class TableMeta {
 
     public void dropColumn(String columnName) throws DBException {
         if (!this.columns.containsKey(columnName)) {
-            throw new DBException(ExceptionTypes.ColumnDoseNotExist(columnName));
+            throw new DBException(ExceptionTypes.ColumnDoesNotExist(columnName));
         }
         this.columns.remove(columnName);
     }

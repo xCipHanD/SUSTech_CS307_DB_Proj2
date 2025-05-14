@@ -74,7 +74,7 @@ public class DBManager {
 
     public void descTable(String table_name) throws DBException {
         if (!isTableExists(table_name)) {
-            throw new DBException(ExceptionTypes.TableDoseNotExist(table_name));
+            throw new DBException(ExceptionTypes.TableDoesNotExist(table_name));
         }
         TableMeta tableMeta = metaManager.getTable(table_name);
         java.util.List<ColumnMeta> colList = tableMeta.columns_list;
@@ -136,7 +136,7 @@ public class DBManager {
      */
     public void dropTable(String table_name) throws DBException {
         if (!isTableExists(table_name)) {
-            throw new DBException(ExceptionTypes.TableDoseNotExist(table_name));
+            throw new DBException(ExceptionTypes.TableDoesNotExist(table_name));
         }
         // remove table from meta manager
         metaManager.dropTable(table_name);
@@ -144,7 +144,7 @@ public class DBManager {
         String table_folder = String.format("%s/%s", diskManager.getCurrentDir(), table_name); // vulnerable to path
         File file_folder = new File(table_folder);
         if (!file_folder.exists()) {
-            throw new DBException(ExceptionTypes.TableDoseNotExist(table_name));
+            throw new DBException(ExceptionTypes.TableDoesNotExist(table_name));
         }
         try {
             deleteDirectory(file_folder);

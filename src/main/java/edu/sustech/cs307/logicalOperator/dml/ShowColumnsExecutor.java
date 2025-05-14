@@ -13,7 +13,7 @@ public class ShowColumnsExecutor implements DMLExecutor {
     public ShowColumnsExecutor(ShowColumnsStatement showStatement, DBManager dbManager) throws DBException {
         this.tableName = showStatement.getTableName();
         if (tableName == null) {
-            throw new DBException(ExceptionTypes.TableDoseNotExist(tableName));
+            throw new DBException(ExceptionTypes.TableDoesNotExist(tableName));
         }
         this.dbManager = dbManager;
     }
@@ -21,7 +21,7 @@ public class ShowColumnsExecutor implements DMLExecutor {
     public ShowColumnsExecutor(DescribeStatement describeStatement, DBManager dbManager) throws DBException {
         this.tableName = describeStatement.getTable().getName();
         if (tableName == null) {
-            throw new DBException(ExceptionTypes.TableDoseNotExist(tableName));
+            throw new DBException(ExceptionTypes.TableDoesNotExist(tableName));
         }
         this.dbManager = dbManager;
     }
