@@ -1,6 +1,8 @@
 package edu.sustech.cs307.optimizer;
 
 import java.io.StringReader;
+import java.util.List;
+import java.util.function.Function;
 
 import edu.sustech.cs307.logicalOperator.dml.DropTableExecutor;
 import net.sf.jsqlparser.JSQLParserException;
@@ -18,6 +20,7 @@ import net.sf.jsqlparser.statement.update.Update;
 import net.sf.jsqlparser.statement.insert.Insert;
 import net.sf.jsqlparser.statement.delete.Delete;
 import net.sf.jsqlparser.statement.create.table.CreateTable;
+import net.sf.jsqlparser.expression.Expression;
 
 import edu.sustech.cs307.exception.ExceptionTypes;
 import edu.sustech.cs307.logicalOperator.*;
@@ -88,8 +91,26 @@ public class LogicalPlanner {
     public static LogicalOperator handleSelect(DBManager dbManager, Select selectStmt) throws DBException {
         PlainSelect plainSelect = selectStmt.getPlainSelect();
         if (plainSelect.getFromItem() == null) {
-            throw new DBException(ExceptionTypes.UnsupportedCommand((plainSelect.toString())));
+            // Handle SELECT without FROM, e.g., SELECT 1+1;
+            // This might involve a special operator or direct evaluation.
+            // For now, let's assume it's not supported or needs a different path.
+            // If there are aggregate functions without FROM, it's also a special case.
+            boolean hasAggregates = plainSelect.getSelectItems().stream()
+                    .anyMatch(item -> item.getExpression() instanceof Function);
+            if (hasAggregates) {
+                // Create a dummy operator that produces one row, if necessary, for global
+                // aggregates
+                // This part needs careful design. For now, let's assume aggregates need a FROM.
+                // Or, handle it by creating a LogicalAggregateOperator with no child or a
+                // special one.
+            }
+            // If no aggregates and no FROM, it could be SELECT 1, 'abc';
+            // This could be a LogicalProjectOperator with a special "dummy" child or no
+            // child.
+            // For simplicity, we'll require a FROM for now or throw an error.
+            throw new DBException(ExceptionTypes.UnsupportedCommand("SELECT without FROM: " + plainSelect.toString()));
         }
+
         LogicalOperator root = new LogicalTableScanOperator(plainSelect.getFromItem().toString(), dbManager);
 
         int depth = 0;
@@ -104,11 +125,33 @@ public class LogicalPlanner {
             }
         }
 
-        // 在 Join 之后应用 Filter，Filter 的输入是 Join 的结果 (root)
         if (plainSelect.getWhere() != null) {
             root = new LogicalFilterOperator(root, plainSelect.getWhere());
         }
+
+        // Check for aggregation
+        boolean hasAggregates = plainSelect.getSelectItems().stream()
+                .anyMatch(item -> {
+                    if (item.getExpression() instanceof net.sf.jsqlparser.expression.Function function) {
+                        String funcName = function.toString().toUpperCase();
+                        return funcName.contains("COUNT") || funcName.contains("SUM") ||
+                                funcName.contains("AVG") || funcName.contains("MIN") ||
+                                funcName.contains("MAX");
+                    }
+                    return false;
+                });
+
+        List<Expression> groupByExpressions = null;
+        if (plainSelect.getGroupBy() != null) {
+            groupByExpressions = plainSelect.getGroupBy().getGroupByExpressions();
+        }
+
+        // First project all select items
         root = new LogicalProjectOperator(root, plainSelect.getSelectItems());
+        // Then apply aggregation if needed
+        if (hasAggregates || (groupByExpressions != null && !groupByExpressions.isEmpty())) {
+            root = new LogicalAggregateOperator(root, plainSelect.getSelectItems(), groupByExpressions);
+        }
         return root;
     }
 

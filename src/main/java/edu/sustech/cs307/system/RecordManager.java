@@ -51,13 +51,18 @@ public class RecordManager {
     }
 
     /**
-     * 删除指定名称的文件。
+     * 删除指定名称的表及其关联的数据文件。
      *
-     * @param filename 要删除的文件名
+     * @param tableName 要删除的表名
      * @throws DBException 如果删除文件过程中发生错误
      */
-    public void DeleteFile(String filename) throws DBException {
-        diskManager.DeleteFile(filename);
+    public void DeleteFile(String tableName) throws DBException { // Parameter renamed for clarity
+        String dataFileName = String.format("%s/%s", tableName, "data");
+        // Ensure all pages for this file are cleared from the buffer pool
+        // This uses the previously fixed BufferPool.DeletePage to zero out data
+        bufferPool.DeleteAllPages(dataFileName);
+        // Delete the actual data file from disk
+        diskManager.DeleteFile(dataFileName);
     }
 
     /**

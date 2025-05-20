@@ -22,6 +22,8 @@ public class ColumnMeta {
     @JsonProperty("tableName")
     public String tableName;
 
+    public int size;
+
 
     @JsonCreator
     public ColumnMeta(@JsonProperty("tableName") String tableName,

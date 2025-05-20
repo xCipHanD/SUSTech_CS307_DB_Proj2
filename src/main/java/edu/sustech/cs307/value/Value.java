@@ -49,7 +49,7 @@ public class Value {
                 yield buffer1.array();
             }
             case FLOAT -> {
-                ByteBuffer buffer2 = ByteBuffer.allocate(FLOAT_SIZE); 
+                ByteBuffer buffer2 = ByteBuffer.allocate(FLOAT_SIZE);
                 buffer2.putFloat((float) value);
                 yield buffer2.array();
             }
@@ -60,8 +60,7 @@ public class Value {
             }
             case CHAR -> {
                 String str = (String) value;
-                ByteBuffer buffer3 = ByteBuffer.allocate(64);
-                buffer3.putInt(str.length());
+                ByteBuffer buffer3 = ByteBuffer.allocate(CHAR_SIZE);
                 buffer3.put(str.getBytes());
                 yield buffer3.array();
             }
@@ -93,9 +92,7 @@ public class Value {
             }
             case CHAR -> {
                 ByteBuffer buffer3 = ByteBuffer.wrap(bytes);
-                var length = buffer3.getInt();
-                // int is 4 byte
-                String s = new String(bytes, 4, length);
+                String s = new String(bytes);
                 yield new Value(s);
             }
             default -> throw new RuntimeException("Unsupported value type: " + type);
@@ -111,12 +108,40 @@ public class Value {
             }
             case CHAR -> {
                 byte[] bytes = ((String) this.value).getBytes();
-                ByteBuffer buffer3 = ByteBuffer.wrap(bytes);
-                var length = buffer3.getInt();
-                // int is 4 byte
-                return new String(bytes, 4, length);
+                String s = new String(bytes);
+                s = s.replaceAll("\0", "");
+                return s;
             }
             default -> throw new RuntimeException("Unsupported value type: " + type);
         }
+    }
+
+    public boolean isNull() {
+        return this.value == null;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj)
+            return true;
+        if (!(obj instanceof Value other))
+            return false;
+        if (this.type != other.type)
+            return false;
+        // Compare normalized string representations for CHAR, numeric as value equality
+        if (this.value == null && other.value == null)
+            return true;
+        if (this.value == null || other.value == null)
+            return false;
+        return this.toString().equals(other.toString());
+    }
+
+    @Override
+    public int hashCode() {
+        // Use normalized toString and type to compute hash
+        int result = type.hashCode();
+        String repr = value == null ? null : toString();
+        result = 31 * result + (repr == null ? 0 : repr.hashCode());
+        return result;
     }
 }

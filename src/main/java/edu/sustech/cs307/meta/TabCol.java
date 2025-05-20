@@ -19,16 +19,21 @@ public class TabCol {
 
     @Override
     public boolean equals(Object obj) {
-        if (this == obj) return true;
-        if (obj == null || getClass() != obj.getClass()) return false;
+        if (this == obj)
+            return true;
+        if (obj == null || getClass() != obj.getClass())
+            return false;
         TabCol tabCol = (TabCol) obj;
-        return tableName.equals(tabCol.tableName) && columnName.equals(tabCol.columnName);
+        // 修复：正确处理tableName和columnName可能为null的情况
+        return (tableName == null ? tabCol.tableName == null : tableName.equals(tabCol.tableName)) &&
+                (columnName == null ? tabCol.columnName == null : columnName.equals(tabCol.columnName));
     }
 
     @Override
     public int hashCode() {
-        int result = tableName.hashCode();
-        result = 31 * result + columnName.hashCode();
+        // 修复：正确处理tableName和columnName可能为null的情况
+        int result = tableName == null ? 0 : tableName.hashCode();
+        result = 31 * result + (columnName == null ? 0 : columnName.hashCode());
         return result;
     }
 }

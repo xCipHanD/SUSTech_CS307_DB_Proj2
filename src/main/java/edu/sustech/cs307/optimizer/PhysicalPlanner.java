@@ -16,6 +16,7 @@ import net.sf.jsqlparser.expression.LongValue;
 import net.sf.jsqlparser.expression.StringValue;
 import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
 import net.sf.jsqlparser.expression.operators.relational.ParenthesedExpressionList;
+import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.statement.select.Values;
 
 import org.pmw.tinylog.Logger;
@@ -40,12 +41,14 @@ public class PhysicalPlanner {
             return handleUpdate(dbManager, updateOperator);
         } else if (logicalOp instanceof LogicalDeleteOperator deleteOperator) {
             return handleDelete(dbManager, deleteOperator);
+            return handleAggregate(dbManager, aggregateOperator);
         } else {
             throw new DBException(ExceptionTypes.UnsupportedOperator(logicalOp.getClass().getSimpleName()));
         }
     }
 
-    private static PhysicalOperator handleDelete(DBManager dbManager, LogicalDeleteOperator deleteOperator) {
+    private static PhysicalOperator handleDelete(DBManager dbManager, LogicalDeleteOperator deleteOperator)
+            throws DBException {
         String tableName = deleteOperator.getTableName();
         Expression whereExpr = deleteOperator.getWhereExpr();
         Logger.debug("Handling DELETE for table: " + tableName + ", condition: " + whereExpr);
@@ -60,7 +63,8 @@ public class PhysicalPlanner {
         return new DeleteOperator(tableName, child, dbManager);
     }
 
-    private static PhysicalOperator handleTableScan(DBManager dbManager, LogicalTableScanOperator logicalTableScanOp) {
+    private static PhysicalOperator handleTableScan(DBManager dbManager, LogicalTableScanOperator logicalTableScanOp)
+            throws DBException {
         String tableName = logicalTableScanOp.getTableName();
         TableMeta tableMeta;
         try {
@@ -101,6 +105,23 @@ public class PhysicalPlanner {
             throws DBException {
         PhysicalOperator inputOp = generateOperator(dbManager, logicalProjectOp.getChild());
         return new ProjectOperator(inputOp, logicalProjectOp.getOutputSchema());
+    }
+
+    /**
+     * Converts a {@link LogicalAggregateOperator} into a
+     * {@link PhysicalAggregateOperator}.
+     * It recursively generates the physical operator for the child and then wraps
+     * it with the aggregate operator.
+     *
+     * @param dbManager          The database manager instance.
+     * @param logicalAggregateOp The logical aggregate operator to convert.
+     * @return The corresponding physical aggregate operator.
+     * @throws DBException If an error occurs during physical plan generation.
+     */
+    private static PhysicalOperator handleAggregate(DBManager dbManager, LogicalAggregateOperator logicalAggregateOp)
+            throws DBException {
+        PhysicalOperator childOperator = generateOperator(dbManager, logicalAggregateOp.getChild());
+        return new PhysicalAggregateOperator(childOperator, logicalAggregateOp);
     }
 
     /**
@@ -182,8 +203,8 @@ public class PhysicalPlanner {
                     value_str = value_str.substring(0, 64);
                 }
                 values.add(new Value(value_str));
-            } else if (expr instanceof DoubleValue float_value) { // This should handle both FLOAT and DOUBLE from
-                // JSqlParser
+            } else if (expr instanceof DoubleValue float_value) {
+                // This should handle both FLOAT and DOUBLE from JSqlParser
                 // We need to check the target column type to differentiate
                 if (tableMeta.columns_list.get(i).type == ValueType.FLOAT) {
                     values.add(new Value((float) float_value.getValue())); // Create a FLOAT Value
@@ -207,12 +228,10 @@ public class PhysicalPlanner {
 
     private static PhysicalOperator handleUpdate(DBManager dbManager, LogicalUpdateOperator logicalUpdateOp)
             throws DBException {
-        // TODO: Implement handleUpdate
         PhysicalOperator scanner = generateOperator(dbManager, logicalUpdateOp.getChild());
-        if (logicalUpdateOp.getColumns().size() != 1) {
-            throw new DBException(ExceptionTypes.InvalidSQL("INSERT", "Unsupported expression list"));
-        }
-        return new UpdateOperator(scanner, logicalUpdateOp.getTableName(), logicalUpdateOp.getColumns().get(0),
+        return new UpdateOperator(scanner, logicalUpdateOp.getTableName(),
+                logicalUpdateOp
+                        .getUpdateSets(),
                 logicalUpdateOp.getExpression());
     }
 }

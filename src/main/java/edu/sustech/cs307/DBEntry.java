@@ -12,6 +12,7 @@ import edu.sustech.cs307.storage.DiskManager;
 import edu.sustech.cs307.system.DBManager;
 import edu.sustech.cs307.system.RecordManager;
 import edu.sustech.cs307.tuple.Tuple;
+import edu.sustech.cs307.value.Value;
 
 import org.apache.commons.lang3.StringUtils;
 import org.jline.reader.LineReader;
@@ -110,15 +111,17 @@ public class DBEntry {
                         Logger.info(operator);
                         continue;
                     }
-                    Logger.info(getStartEndLine(physicalOperator.outputSchema().size(), true));
-                    Logger.info(getHeaderString(physicalOperator.outputSchema()));
-                    Logger.info(getSperator(physicalOperator.outputSchema().size()));
+                    // Initialize and prepare the operator
                     physicalOperator.Begin();
+                    // Print header line and columns
+                    Logger.info(getStartEndLine(physicalOperator.outputSchema(), true));
+                    Logger.info(getHeaderString(physicalOperator.outputSchema()));
+                    Logger.info(getSperator(physicalOperator.outputSchema()));
                     while (physicalOperator.hasNext()) {
                         physicalOperator.Next();
                         Tuple tuple = physicalOperator.Current();
-                        Logger.info(getRecordString(tuple));
-                        Logger.info(getSperator(physicalOperator.outputSchema().size()));
+                        Logger.info(getRecordString(tuple, physicalOperator.outputSchema())); // MODIFIED CALL
+                        Logger.info(getSperator(physicalOperator.outputSchema())); // MODIFIED CALL
                     }
                     physicalOperator.Close();
                     dbManager.getBufferPool().FlushAllPages("");
@@ -146,47 +149,97 @@ public class DBEntry {
 
     private static String getHeaderString(ArrayList<ColumnMeta> columnMetas) {
         StringBuilder header = new StringBuilder("|");
+        if (columnMetas.isEmpty()) {
+            // For empty schema, use a fixed width consistent with other methods
+            header.append(StringUtils.center("(empty)", 15, ' ')).append("|");
+            return header.toString();
+        }
         for (var entry : columnMetas) {
-            String tabcol = String.format("%s.%s", entry.tableName, entry.name);
-            String centeredText = StringUtils.center(tabcol, 15, ' ');
+            String tabcol = entry.tableName == null ? entry.name : entry.tableName + "." + entry.name;
+            int columnWidth = Math.max(tabcol.length(), 15); // Dynamic width based on header text
+            String centeredText = StringUtils.center(tabcol, columnWidth, ' '); // Use dynamic columnWidth
             header.append(centeredText).append("|");
         }
         return header.toString();
     }
 
-    private static String getRecordString(Tuple tuple) throws DBException {
-        StringBuilder tuple_string = new StringBuilder("|");
-        for (var entry : tuple.getValues()) {
-            String tabCol = String.format("%s", entry);
-            String centeredText = StringUtils.center(tabCol, 15, ' ');
-            tuple_string.append(centeredText).append("|");
+    private static String getRecordString(Tuple tuple, ArrayList<ColumnMeta> columnMetas) throws DBException {
+        Value[] values = tuple == null ? null : tuple.getValues();
+        StringBuilder sb = new StringBuilder("|");
+
+        if (columnMetas.isEmpty()) {
+            if (values != null && values.length == 1 && values[0] != null && !values[0].isNull()) {
+                sb.append(StringUtils.center(values[0].toString(), 15, ' ')).append("|");
+            } else {
+                sb.append(StringUtils.center("0", 15, ' ')).append("|");
+            }
+            return sb.toString();
         }
-        return tuple_string.toString();
+
+        for (int i = 0; i < columnMetas.size(); i++) {
+            ColumnMeta cm = columnMetas.get(i);
+            String tabcol = cm.tableName == null ? cm.name : cm.tableName + "." + cm.name;
+            int columnWidth = Math.max(tabcol.length(), 15);
+            String cellContent;
+            if (tuple == null || values == null || i >= values.length || values[i] == null || values[i].isNull()
+                    || values[i].value == null) {
+                cellContent = "(null)";
+            } else {
+                cellContent = values[i].toString();
+            }
+            sb.append(StringUtils.center(cellContent, columnWidth, ' ')).append("|");
+        }
+        return sb.toString();
     }
 
-    private static String getSperator(int width) {
+    private static String getSperator(ArrayList<ColumnMeta> columnMetas) {
         StringBuilder line = new StringBuilder("+");
-        for (int i = 0; i < width; i++) {
-            line.append("───────────────");
+        if (columnMetas.isEmpty()) {
+            line.append(StringUtils.repeat("─", 15)).append("+");
+            return line.toString();
+        }
+        for (var entry : columnMetas) {
+            String tabcol = entry.tableName == null ? entry.name : entry.tableName + "." + entry.name;
+            int columnWidth = Math.max(tabcol.length(), 15);
+            line.append(StringUtils.repeat("─", columnWidth));
             line.append("+");
         }
         return line.toString();
     }
 
-    private static String getStartEndLine(int width, boolean header) {
+    private static String getStartEndLine(ArrayList<ColumnMeta> columnMetas, boolean header) {
         StringBuilder end_line;
         if (header) {
             end_line = new StringBuilder("┌");
         } else {
             end_line = new StringBuilder("└");
         }
-        for (int i = 0; i < width; i++) {
-            end_line.append("───────────────");
+        if (columnMetas.isEmpty()) {
+            end_line.append(StringUtils.repeat("─", 15));
             if (header) {
                 end_line.append("┐");
             } else {
                 end_line.append("┘");
             }
+            return end_line.toString();
+        }
+        for (int i = 0; i < columnMetas.size(); i++) {
+            ColumnMeta entry = columnMetas.get(i);
+            String tabcol = entry.tableName == null ? entry.name : entry.tableName + "." + entry.name;
+            int columnWidth = Math.max(tabcol.length(), 15);
+            end_line.append(StringUtils.repeat("─", columnWidth));
+            if (i < columnMetas.size() - 1) {
+                if (header) {
+                    end_line.append("┬");
+                } else {
+                    end_line.append("┴");
+                }
+            }
+        }
+        if (header) {
+            end_line.append("┐");
+        } else {
+            end_line.append("┘");
         }
         return end_line.toString();
     }

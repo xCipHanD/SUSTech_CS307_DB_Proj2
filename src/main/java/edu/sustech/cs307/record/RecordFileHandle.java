@@ -143,7 +143,8 @@ public class RecordFileHandle {
         RecordPageHandle pageHandle = FetchPageHandle(rid.pageNum);
         ByteBuf slot = pageHandle.getSlot(rid.slotNum);
         slot.clear();
-        slot.writeBytes(buf);
+        // Write only up to the record size to avoid overflow
+        slot.writeBytes(buf, 0, fileHeader.getRecordSize());
         bufferPool.unpin_page(pageHandle.page.position, true);
     }
 

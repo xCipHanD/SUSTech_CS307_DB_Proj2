@@ -17,7 +17,11 @@ public class ProjectOperator implements PhysicalOperator {
     public ProjectOperator(PhysicalOperator child, List<TabCol> outputSchema) {
         this.child = child;
         this.outputSchema = outputSchema;
-        if (this.outputSchema.size() == 1 && this.outputSchema.get(0).getTableName().equals("*")) {
+        // 修复：添加空指针检查，确保getTableName()返回值不为null
+        if (this.outputSchema.size() == 1 &&
+                ("*".equals(this.outputSchema.get(0).getTableName()) ||
+                        (this.outputSchema.get(0).getTableName() == null
+                                && "*".equals(this.outputSchema.get(0).getColumnName())))) {
             List<TabCol> newOutputSchema = new ArrayList<>();
             for (ColumnMeta tabCol : child.outputSchema()) {
                 newOutputSchema.add(new TabCol(tabCol.tableName, tabCol.name));
@@ -42,7 +46,6 @@ public class ProjectOperator implements PhysicalOperator {
             child.Next();
             Tuple inputTuple = child.Current();
             if (inputTuple != null) {
-
                 currentTuple = new ProjectTuple(inputTuple, outputSchema); // Create ProjectTuple
             } else {
                 currentTuple = null;
@@ -68,8 +71,10 @@ public class ProjectOperator implements PhysicalOperator {
         ArrayList<ColumnMeta> finalOutputSchema = new ArrayList<>();
         for (TabCol selectedCol : this.outputSchema) { // Iterate through the selected columns in desired order
             for (ColumnMeta childColMeta : child.outputSchema()) { // Find the corresponding ColumnMeta from child
-                if (selectedCol.getTableName().equals(childColMeta.tableName)
-                        && selectedCol.getColumnName().equals(childColMeta.name)) {
+                if ((selectedCol.getTableName() == null && childColMeta.tableName == null) ||
+                        (selectedCol.getTableName() != null
+                                && selectedCol.getTableName().equals(childColMeta.tableName)) &&
+                                selectedCol.getColumnName().equals(childColMeta.name)) {
                     finalOutputSchema.add(childColMeta);
                     break;
                 }

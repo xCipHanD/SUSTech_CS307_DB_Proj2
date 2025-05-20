@@ -8,14 +8,14 @@ import java.util.List;
 
 public class LogicalUpdateOperator extends LogicalOperator {
     private final String tableName;
-    private final List<UpdateSet> columns;
+    private final List<UpdateSet> updateSetList;
     private final Expression expressions;
 
-    public LogicalUpdateOperator(LogicalOperator child, String tableName, List<UpdateSet> columns,
-                                 Expression expressions) {
+    public LogicalUpdateOperator(LogicalOperator child, String tableName, List<UpdateSet> updateSets,
+            Expression expressions) {
         super(Collections.singletonList(child));
         this.tableName = tableName;
-        this.columns = columns;
+        this.updateSetList = updateSets;
         this.expressions = expressions;
     }
 
@@ -23,8 +23,8 @@ public class LogicalUpdateOperator extends LogicalOperator {
         return tableName;
     }
 
-    public List<UpdateSet> getColumns() {
-        return columns;
+    public List<UpdateSet> getUpdateSets() {
+        return updateSetList;
     }
 
     public Expression getExpression() {
@@ -33,7 +33,7 @@ public class LogicalUpdateOperator extends LogicalOperator {
 
     @Override
     public String toString() {
-        return "UpdateOperator(table=" + tableName + ", columns=" + columns + ", expressions=" + expressions
+        return "UpdateOperator(table=" + tableName + ", columns=" + updateSetList + ", expressions=" + expressions
                 + ")\n ├── " + childern.get(0);
     }
 }

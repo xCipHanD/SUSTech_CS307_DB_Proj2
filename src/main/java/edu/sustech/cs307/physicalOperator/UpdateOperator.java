@@ -18,25 +18,27 @@ import edu.sustech.cs307.value.ValueType;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import net.sf.jsqlparser.expression.Expression;
+import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
+import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.statement.update.UpdateSet;
 
 public class UpdateOperator implements PhysicalOperator {
     private final SeqScanOperator seqScanOperator;
     private final String tableName;
-    private final UpdateSet updateSet;
+    private final List<UpdateSet> updateSetList;
     private final Expression whereExpr;
 
     private int updateCount;
     private boolean isDone;
 
-    public UpdateOperator(PhysicalOperator inputOperator, String tableName, UpdateSet updateSet,
+    public UpdateOperator(PhysicalOperator inputOperator, String tableName, List<UpdateSet> updateSetList,
             Expression whereExpr) {
         if (!(inputOperator instanceof SeqScanOperator seqScanOperator)) {
             throw new RuntimeException("The delete operator only accepts SeqScanOperator as input");
         }
         this.seqScanOperator = seqScanOperator;
         this.tableName = tableName;
-        this.updateSet = updateSet;
+        this.updateSetList = updateSetList;
         this.whereExpr = whereExpr;
         this.updateCount = 0;
         this.isDone = false;
@@ -61,23 +63,52 @@ public class UpdateOperator implements PhysicalOperator {
                 List<Value> newValues = new ArrayList<>(Arrays.asList(oldValues));
                 TabCol[] schema = tuple.getTupleSchema();
 
-                for (int i = 0; i < this.updateSet.getColumns().size(); i++) {
-                    String targetTable = updateSet.getColumn(i).getTableName();
-                    String targetColumn = updateSet.getColumn(i).getColumnName();
-                    int index = -1;
-                    for (int j = 0; j < schema.length; j++) {
-                        if (schema[j].getColumnName().equalsIgnoreCase(targetColumn)
-                                && (schema[j].getTableName().equalsIgnoreCase(targetTable)
-                                        || schema[j].getTableName().equalsIgnoreCase(this.tableName))) {
-                            index = j;
-                            break;
+                for (UpdateSet currentUpdateSet : this.updateSetList) {
+                    List<Column> columnsToUpdate = currentUpdateSet.getColumns();
+                    // Corrected: JSqlParser's UpdateSet has getValues() which returns an
+                    // ExpressionList,
+                    // and ExpressionList has getExpressions() to get the List<Expression>.
+                    ExpressionList<Expression> newExpressions = (ExpressionList<Expression>) currentUpdateSet
+                            .getValues();
+
+                    if (columnsToUpdate.size() != newExpressions.size()) {
+                        // This case should ideally be caught by the parser or an earlier validation
+                        // step
+                        throw new DBException(ExceptionTypes.InvalidSQL("UPDATE",
+                                "Column and value counts do not match in an UPDATE SET clause"));
+                    }
+
+                    for (int i = 0; i < columnsToUpdate.size(); i++) {
+                        Column column = columnsToUpdate.get(i);
+                        Expression expression = newExpressions.get(i);
+
+                        String targetColumnName = column.getColumnName();
+                        String targetTable = null;
+                        if (column.getTable() != null && column.getTable().getName() != null) {
+                            targetTable = column.getTable().getName();
+                        } else {
+                            // If table is not specified in "SET table.column = ...", assume the table being
+                            // updated.
+                            // For "SET column = ...", table will be null here.
+                            targetTable = tuple.getTableName();
                         }
+
+                        int index = -1;
+                        for (int j = 0; j < schema.length; j++) {
+                            // Ensure schema table name and column name match, ignoring case.
+                            if (schema[j].getColumnName().equalsIgnoreCase(targetColumnName)
+                                    && schema[j].getTableName().equalsIgnoreCase(targetTable)) {
+                                index = j;
+                                break;
+                            }
+                        }
+                        if (index == -1) {
+                            throw new DBException(ExceptionTypes
+                                    .ColumnDoesNotExist("Column " + targetColumnName + " in table " + targetTable));
+                        }
+                        Value newValue = tuple.evaluateExpression(expression);
+                        newValues.set(index, newValue);
                     }
-                    if (index == -1) {
-                        throw new DBException(ExceptionTypes.ColumnDoesNotExist(targetColumn));
-                    }
-                    Value newValue = tuple.evaluateExpression(updateSet.getValue(i));
-                    newValues.set(index, newValue);
                 }
                 ByteBuf buffer = Unpooled.buffer();
                 for (Value v : newValues) {

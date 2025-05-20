@@ -6,6 +6,7 @@ import edu.sustech.cs307.meta.TabCol;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.statement.select.AllColumns;
 import net.sf.jsqlparser.statement.select.SelectItem;
+import net.sf.jsqlparser.expression.Function; // Import Function
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -32,9 +33,19 @@ public class LogicalProjectOperator extends LogicalOperator {
             if (selectItem.getExpression() instanceof AllColumns) {
                 outputSchema.add(new TabCol("*", "*"));
             } else if (selectItem.getExpression() instanceof Column column) {
-                String tableName = column.getTable().getName();
+                String tableName = column.getTable() != null ? column.getTable().getName() : null; // Handle null table
                 String columnName = column.getColumnName();
                 outputSchema.add(new TabCol(tableName, columnName));
+            } else if (selectItem.getExpression() instanceof Function function) {
+                // For functions, use the function's string representation or alias as the
+                // column name
+                // Table name can be null or a special marker for derived columns
+                String columnName = function.getName() + "("
+                        + (function.getParameters() != null ? function.getParameters().toString() : "") + ")";
+                if (selectItem.getAlias() != null) {
+                    columnName = selectItem.getAlias().getName();
+                }
+                outputSchema.add(new TabCol(null, columnName)); // Table name is null for function results
             } else {
                 throw new DBException(ExceptionTypes.NotSupportedOperation(selectItem.getExpression()));
             }

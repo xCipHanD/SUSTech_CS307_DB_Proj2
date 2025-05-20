@@ -169,18 +169,24 @@ public class BufferPool {
     public boolean DeletePage(PagePosition position) throws DBException {
         Integer frame_id = pageMap.get(position);
         if (frame_id != null) {
-            Page page = pages.get(frame_id);
-            if (page.pin_count > 0) {
+            Page pageToReset = pages.get(frame_id);
+
+            if (pageToReset.pin_count > 0) {
                 return false;
             }
-            if (page.dirty) {
-                diskManager.FlushPage(page);
-                page.dirty = false;
+            if (pageToReset.dirty) {
+                diskManager.FlushPage(pageToReset);
+                pageToReset.dirty = false;
             }
-            pages.remove(frame_id);
             pageMap.remove(position);
-            freeList.add(frame_id);
-            // pin count must be 0
+            pageToReset.position = new PagePosition("null", 0); // Default/invalid state
+            pageToReset.pin_count = 0;
+            if (pageToReset.data != null) {
+                pageToReset.data.setZero(0, pageToReset.data.capacity());
+            }
+            if (!freeList.contains(frame_id)) {
+                freeList.add(frame_id);
+            }
             return true;
         } else {
             return false;

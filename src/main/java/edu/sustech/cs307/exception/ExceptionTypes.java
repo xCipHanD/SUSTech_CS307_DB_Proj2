@@ -154,4 +154,11 @@ public enum ExceptionTypes {
                 String.format("Unsupported operation: %s", expression));
         return NOT_SUPPORTED_OPERATION;
     }
+
+    static public ExceptionTypes NoMoreTuples() {
+        NOT_SUPPORTED_OPERATION.SetErrorResult(
+                String.format("No more tuples"));
+        return NOT_SUPPORTED_OPERATION;
+    }
+
 }

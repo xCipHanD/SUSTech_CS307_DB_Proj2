@@ -7,11 +7,13 @@ import edu.sustech.cs307.tuple.TableTuple;
 import edu.sustech.cs307.tuple.Tuple;
 import edu.sustech.cs307.meta.TableMeta;
 import edu.sustech.cs307.exception.DBException;
+import edu.sustech.cs307.exception.ExceptionTypes;
 import edu.sustech.cs307.record.RID;
 import edu.sustech.cs307.record.RecordPageHandle;
 import edu.sustech.cs307.record.BitMap;
 import edu.sustech.cs307.record.Record;
 import edu.sustech.cs307.record.RecordFileHandle;
+import org.pmw.tinylog.Logger;
 
 import java.util.ArrayList;
 
@@ -28,21 +30,25 @@ public class SeqScanOperator implements PhysicalOperator {
     private int recordsPerPage;
     private boolean isOpen = false;
 
-    public SeqScanOperator(String tableName, DBManager dbManager) {
+    public SeqScanOperator(String tableName, DBManager dbManager) throws DBException {
         this.tableName = tableName;
         this.dbManager = dbManager;
         try {
             this.tableMeta = dbManager.getMetaManager().getTable(tableName);
+            if (this.tableMeta == null) {
+                throw new DBException(ExceptionTypes.TableDoesNotExist(tableName));
+            }
         } catch (DBException e) {
-            // Handle exception properly, maybe log or rethrow
-            e.printStackTrace();
+            Logger.error("Failed to get table metadata: " + e.getMessage());
+            throw e; // 重新抛出异常以便上层处理
         }
     }
 
     @Override
-    public boolean hasNext() {
+    public boolean hasNext() throws DBException {
         if (!isOpen)
             return false;
+
         try {
             // Check if current page and slot are valid, and if there are more records
             if (currentPageNum <= totalPages) {
@@ -59,7 +65,8 @@ public class SeqScanOperator implements PhysicalOperator {
                 }
             }
         } catch (DBException e) {
-            e.printStackTrace(); // Handle exception properly
+            Logger.error("Error checking for next record: " + e.getMessage());
+            throw e; // 传播异常以便上层处理
         }
         return false; // No more records
     }
@@ -74,15 +81,17 @@ public class SeqScanOperator implements PhysicalOperator {
             currentSlotNum = 0; // Start from first slot
             isOpen = true;
         } catch (DBException e) {
-            e.printStackTrace(); // Handle exception properly
+            Logger.error("Failed to begin scan: " + e.getMessage());
             isOpen = false;
+            throw e; // 重新抛出异常以便上层处理
         }
     }
 
     @Override
-    public void Next() {
+    public void Next() throws DBException {
         if (!isOpen)
             return;
+
         try {
             if (hasNext()) { // Advance to the next record
                 RID rid = new RID(currentPageNum, currentSlotNum);
@@ -92,14 +101,16 @@ public class SeqScanOperator implements PhysicalOperator {
                     currentPageNum++;
                     currentSlotNum = 0;
                 }
-                // readonly
+
+                // 修改从readonly到false，因为如果页面被修改，我们需要将其标记为脏页
                 fileHandle.UnpinPageHandle(currentPageNum, false);
             } else {
                 currentRecord = null;
             }
         } catch (DBException e) {
-            e.printStackTrace(); // Handle exception properly
+            Logger.error("Error getting next record: " + e.getMessage());
             currentRecord = null;
+            throw e; // 传播异常以便上层处理
         }
     }
 
@@ -108,18 +119,24 @@ public class SeqScanOperator implements PhysicalOperator {
         if (!isOpen || currentRecord == null) {
             return null;
         }
-        return new TableTuple(tableName, tableMeta, currentRecord, new RID(this.currentPageNum, this.currentSlotNum - 1));
+        return new TableTuple(tableName, tableMeta, currentRecord,
+                new RID(this.currentPageNum, this.currentSlotNum - 1));
     }
 
     @Override
     public void Close() {
         if (!isOpen)
             return;
+
         try {
-            dbManager.getRecordManager().CloseFile(fileHandle);
+            if (fileHandle != null) {
+                dbManager.getRecordManager().CloseFile(fileHandle);
+            }
         } catch (DBException e) {
-            e.printStackTrace(); // Handle exception properly
+            Logger.error("Failed to close file handle: " + e.getMessage());
+            // 在Close方法中不需要抛出异常，因为这通常在finally块中调用
         }
+
         fileHandle = null;
         currentRecord = null;
         isOpen = false;
@@ -127,7 +144,7 @@ public class SeqScanOperator implements PhysicalOperator {
 
     @Override
     public ArrayList<ColumnMeta> outputSchema() {
-        return tableMeta.columns_list;
+        return tableMeta != null ? tableMeta.columns_list : new ArrayList<>();
     }
 
     public RecordFileHandle getFileHandle() {
