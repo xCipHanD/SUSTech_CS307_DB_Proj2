@@ -4,20 +4,19 @@ import edu.sustech.cs307.exception.DBException;
 import edu.sustech.cs307.exception.ExceptionTypes;
 import edu.sustech.cs307.system.DBManager;
 import net.sf.jsqlparser.expression.Expression;
-
 import java.util.Collections;
 
 public class LogicalDeleteOperator extends LogicalOperator {
     private final String tableName;
     private final DBManager dbManager;
-    private final Expression whereCondition;
+    private final Expression whereExpr;
 
-    public LogicalDeleteOperator(LogicalOperator input, String tableName, Expression whereCondition,
-            DBManager dbManager) throws DBException {
+    public LogicalDeleteOperator(LogicalOperator input, String tableName, Expression whereExpr,
+                                 DBManager dbManager) throws DBException {
         super(Collections.singletonList(input)); // Single input operator (e.g., TableScan or Filter)
         this.tableName = tableName;
-        this.dbManager = dbManager; // Reuse DBManager from input operator
-        this.whereCondition = whereCondition;
+        this.dbManager = dbManager;
+        this.whereExpr = whereExpr;
         if (!dbManager.isTableExists(tableName)) {
             throw new DBException(ExceptionTypes.TableDoesNotExist(tableName));
         }
@@ -27,14 +26,13 @@ public class LogicalDeleteOperator extends LogicalOperator {
         return tableName;
     }
 
-    public Expression getWhereCondition() {
-        return whereCondition;
+    public Expression getWhereExpr() {
+        return whereExpr;
     }
 
     @Override
     public String toString() {
-        String conditionStr = whereCondition != null ? ", where=" + whereCondition : "";
+        String conditionStr = whereExpr != null ? ", where=" + whereExpr : "";
         return "DeleteOperator(table=" + tableName + conditionStr + ")";
     }
 }
-// This class represents a logical delete operation in a query execution plan.(Not secure to be right)

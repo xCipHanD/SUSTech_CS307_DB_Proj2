@@ -18,6 +18,8 @@ import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
 import net.sf.jsqlparser.expression.operators.relational.ParenthesedExpressionList;
 import net.sf.jsqlparser.statement.select.Values;
 
+import org.pmw.tinylog.Logger;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -36,11 +38,26 @@ public class PhysicalPlanner {
             return handleInsert(dbManager, insertOperator);
         } else if (logicalOp instanceof LogicalUpdateOperator updateOperator) {
             return handleUpdate(dbManager, updateOperator);
-        }
-
-        else {
+        } else if (logicalOp instanceof LogicalDeleteOperator deleteOperator) {
+            return handleDelete(dbManager, deleteOperator);
+        } else {
             throw new DBException(ExceptionTypes.UnsupportedOperator(logicalOp.getClass().getSimpleName()));
         }
+    }
+
+    private static PhysicalOperator handleDelete(DBManager dbManager, LogicalDeleteOperator deleteOperator) {
+        String tableName = deleteOperator.getTableName();
+        Expression whereExpr = deleteOperator.getWhereExpr();
+        Logger.debug("Handling DELETE for table: " + tableName + ", condition: " + whereExpr);
+
+        // Create a SeqScanOperator to scan the table
+        SeqScanOperator seqScan = new SeqScanOperator(tableName, dbManager);
+
+        // Wrap with FilterOperator if there is a WHERE condition
+        PhysicalOperator child = (whereExpr != null) ? new FilterOperator(seqScan, whereExpr) : seqScan;
+
+        // Create and return the DeleteOperator
+        return new DeleteOperator(tableName, child, dbManager);
     }
 
     private static PhysicalOperator handleTableScan(DBManager dbManager, LogicalTableScanOperator logicalTableScanOp) {
@@ -88,7 +105,7 @@ public class PhysicalPlanner {
 
     /**
      * 处理将逻辑插入操作转换为物理插入运算符的过程
-     * 
+     *
      * @param dbManager       提供数据库操作访问的数据库管理器实例
      * @param logicalInsertOp 需要被转换的逻辑插入运算符
      * @return 准备好执行的物理插入运算符
@@ -115,7 +132,6 @@ public class PhysicalPlanner {
                 }
                 columns.add(colName);
             }
-
         } else {
             // If no columns specified, use all table columns in order
             for (ColumnMeta columnMeta : tableMeta.columns_list) {
@@ -148,8 +164,6 @@ public class PhysicalPlanner {
         parseValue(values, valuesList, tableMeta);
         // will always be same size tuple
 
-        // check the
-
         return new InsertOperator(logicalInsertOp.tableName, columns,
                 values, dbManager);
     }
@@ -169,7 +183,7 @@ public class PhysicalPlanner {
                 }
                 values.add(new Value(value_str));
             } else if (expr instanceof DoubleValue float_value) { // This should handle both FLOAT and DOUBLE from
-                                                                  // JSqlParser
+                // JSqlParser
                 // We need to check the target column type to differentiate
                 if (tableMeta.columns_list.get(i).type == ValueType.FLOAT) {
                     values.add(new Value((float) float_value.getValue())); // Create a FLOAT Value
