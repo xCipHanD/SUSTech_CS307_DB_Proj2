@@ -92,6 +92,10 @@ public class DiskManager {
         this.filePages = filePages;
     }
 
+    public String getDbName() {
+        return this.currentDir;
+    }
+
     public String getCurrentDir() {
         return currentDir;
     }

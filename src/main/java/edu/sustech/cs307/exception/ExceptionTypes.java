@@ -22,7 +22,9 @@ public enum ExceptionTypes {
     INSERT_COLUMN_NAME_NOT_MATCH,
     INSERT_COLUMN_TYPE_NOT_MATCH,
     GET_VALUE_FROM_TEMP_TUPLE,
-    NOT_SUPPORTED_OPERATION;
+    NOT_SUPPORTED_OPERATION,
+    TYPE_MISMATCH, // Added new ExceptionType for type mismatches
+    INVALID_OPERATION; // Added for operations that are invalid in the current context
 
     private String error_result;
 
@@ -131,9 +133,9 @@ public enum ExceptionTypes {
         return INSERT_COLUMN_TYPE_NOT_MATCH;
     }
 
-    static public ExceptionTypes UnsupportedValueType(ValueType valueType) {
-        UNSUPPORTED_VALUE_TYPE.SetErrorResult(
-                String.format("Unsupported value type: %s", valueType));
+    static public ExceptionTypes UnsupportedValueType(String message, ValueType valueType) {
+        UNSUPPORTED_VALUE_TYPE
+                .SetErrorResult(message != null ? message : String.format("Unsupported value type: %s", valueType));
         return UNSUPPORTED_VALUE_TYPE;
     }
 
@@ -159,6 +161,20 @@ public enum ExceptionTypes {
         NOT_SUPPORTED_OPERATION.SetErrorResult(
                 String.format("No more tuples"));
         return NOT_SUPPORTED_OPERATION;
+    }
+
+    static public ExceptionTypes TypeMismatch(String message) {
+        TYPE_MISMATCH.SetErrorResult(message);
+        return TYPE_MISMATCH;
+    }
+
+    static public ExceptionTypes InvalidOperation(String message) {
+        INVALID_OPERATION.SetErrorResult(message);
+        return INVALID_OPERATION;
+    }
+
+    public static ExceptionTypes RecordNotFound(String string) {
+        throw new UnsupportedOperationException("Unimplemented method 'RecordNotFound'");
     }
 
 }

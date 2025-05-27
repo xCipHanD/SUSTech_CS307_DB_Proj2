@@ -106,7 +106,7 @@ public class FilterOperator implements PhysicalOperator {
     }
 
     @Override
-    public void Close() {
+    public void Close() throws DBException {
         if (child != null) {
             child.Close();
         }

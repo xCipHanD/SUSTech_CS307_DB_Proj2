@@ -9,11 +9,15 @@ import edu.sustech.cs307.value.Value;
 import edu.sustech.cs307.value.ValueType;
 import edu.sustech.cs307.meta.ColumnMeta;
 import edu.sustech.cs307.meta.TableMeta;
+import edu.sustech.cs307.index.Index; // Added import for Index
+import edu.sustech.cs307.index.InMemoryOrderedIndex; // Added
+import java.io.File; // Added
 
 import net.sf.jsqlparser.expression.DoubleValue;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.LongValue;
 import net.sf.jsqlparser.expression.StringValue;
+import net.sf.jsqlparser.expression.operators.relational.EqualsTo; // Added import for EqualsTo
 import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
 import net.sf.jsqlparser.expression.operators.relational.ParenthesedExpressionList;
 import net.sf.jsqlparser.schema.Column;
@@ -67,27 +71,181 @@ public class PhysicalPlanner {
     private static PhysicalOperator handleTableScan(DBManager dbManager, LogicalTableScanOperator logicalTableScanOp)
             throws DBException {
         String tableName = logicalTableScanOp.getTableName();
-        TableMeta tableMeta;
-        try {
-            tableMeta = dbManager.getMetaManager().getTable(tableName);
-        } catch (DBException e) {
-            // Fallback to SeqScan if TableMeta cannot be retrieved
-            return new SeqScanOperator(tableName, dbManager);
+        TableMeta tableMeta = dbManager.getMetaManager().getTable(tableName);
+
+        // 检查表是否有可用的索引，优先使用索引进行全表扫描
+        if (tableMeta.getIndexes() != null && !tableMeta.getIndexes().isEmpty()) {
+            // 选择第一个可用的索引进行全表扫描（可以进一步优化选择策略）
+            String firstIndexedColumn = tableMeta.getIndexes().keySet().iterator().next();
+
+            try {
+                // 尝试获取或创建索引
+                Index index = dbManager.getIndexManager().getIndex(tableName, firstIndexedColumn);
+
+                if (index == null && tableMeta.getIndexes().containsKey(firstIndexedColumn)) {
+                    // 尝试创建B+树索引
+                    try {
+                        index = dbManager.getIndexManager().createIndex(tableName, firstIndexedColumn);
+                        Logger.info("Created new B+Tree index for full table scan on {}.{}", tableName,
+                                firstIndexedColumn);
+                    } catch (DBException e) {
+                        Logger.warn("Failed to create B+Tree index for {}.{}: {}, trying InMemoryOrderedIndex",
+                                tableName, firstIndexedColumn, e.getMessage());
+
+                        // B+树索引创建失败，回退到InMemoryOrderedIndex
+                        String dbName = "CS307-DB";
+                        if (dbManager.getDiskManager() != null && dbManager.getDiskManager().getDbName() != null) {
+                            dbName = dbManager.getDiskManager().getDbName();
+                        }
+
+                        String indexPersistPath = dbName + File.separator + "indexes" + File.separator + tableName
+                                + File.separator + firstIndexedColumn + ".json";
+
+                        index = new InMemoryOrderedIndex(indexPersistPath, tableName, firstIndexedColumn);
+                        Logger.info("Using InMemoryOrderedIndex for full table scan on {}.{}", tableName,
+                                firstIndexedColumn);
+                    }
+                }
+
+                // 如果成功获得索引，使用索引进行全表扫描
+                if (index != null) {
+                    if (index instanceof InMemoryOrderedIndex) {
+                        Logger.info("Using InMemoryIndexScanOperator for full table scan on table {}", tableName);
+                        return new InMemoryIndexScanOperator((InMemoryOrderedIndex) index, dbManager);
+                    } else {
+                        // 对于B+树索引，使用HybridScanOperator，但不指定搜索键（全表扫描）
+                        Logger.info("Using HybridScanOperator for full table scan on table {} with index on column {}",
+                                tableName, firstIndexedColumn);
+                        return new HybridScanOperator(tableName, firstIndexedColumn, null, dbManager, index);
+                    }
+                }
+            } catch (DBException e) {
+                Logger.warn("Failed to use index for table scan on {}: {}, falling back to SeqScan",
+                        tableName, e.getMessage());
+                // 如果索引操作失败，继续使用顺序扫描
+            }
         }
 
-        // Check if index exists for the table (for now, assume RBTreeIndex always
-        // exists if index is defined)
-        if (tableMeta.getIndexes() != null && !tableMeta.getIndexes().isEmpty()) {
-            throw new RuntimeException("unimplement");
-        } else {
-            return new SeqScanOperator(tableName, dbManager);
-        }
+        // 如果没有索引或索引操作失败，使用传统的顺序扫描
+        Logger.info("Using SeqScanOperator for table {} (no suitable index available)", tableName);
+        return new SeqScanOperator(tableName, dbManager);
     }
 
     private static PhysicalOperator handleFilter(DBManager dbManager, LogicalFilterOperator logicalFilterOp)
             throws DBException {
+        LogicalOperator childLogicalOp = logicalFilterOp.getChild();
+        Expression whereExpr = logicalFilterOp.getWhereExpr();
+
+        if (childLogicalOp instanceof LogicalTableScanOperator) {
+            LogicalTableScanOperator tableScanOp = (LogicalTableScanOperator) childLogicalOp;
+            String tableName = tableScanOp.getTableName();
+            TableMeta tableMeta = dbManager.getMetaManager().getTable(tableName);
+
+            if (whereExpr instanceof EqualsTo) {
+                EqualsTo equalsTo = (EqualsTo) whereExpr;
+                Expression leftExpr = equalsTo.getLeftExpression();
+                Expression rightExpr = equalsTo.getRightExpression();
+
+                Column queryColumn = null;
+                Value constantValue = null;
+
+                if (leftExpr instanceof Column && !(rightExpr instanceof Column)) {
+                    queryColumn = (Column) leftExpr;
+                    constantValue = getConstantValueFromExpression(rightExpr, dbManager, tableMeta,
+                            queryColumn.getColumnName());
+                } else if (rightExpr instanceof Column && !(leftExpr instanceof Column)) {
+                    queryColumn = (Column) rightExpr;
+                    constantValue = getConstantValueFromExpression(leftExpr, dbManager, tableMeta,
+                            queryColumn.getColumnName());
+                }
+
+                if (queryColumn != null && constantValue != null) {
+                    String columnName = queryColumn.getColumnName();
+
+                    // 首先尝试从IndexManager获取现有索引
+                    Index index = dbManager.getIndexManager().getIndex(tableName, columnName);
+
+                    // 如果IndexManager中没有，检查元数据中是否定义了索引
+                    if (index == null && tableMeta.getIndexes() != null
+                            && tableMeta.getIndexes().containsKey(columnName)) {
+                        // 尝试创建或加载索引
+                        try {
+                            // 首先尝试创建B+树索引
+                            index = dbManager.getIndexManager().createIndex(tableName, columnName);
+                            Logger.info("Created new B+Tree index for {}.{}", tableName, columnName);
+                        } catch (DBException e) {
+                            Logger.warn("Failed to create B+Tree index for {}.{}: {}, trying InMemoryOrderedIndex",
+                                    tableName, columnName, e.getMessage());
+
+                            // B+树索引创建失败，回退到InMemoryOrderedIndex
+                            String dbName = "CS307-DB"; // Fallback, ideally from dbManager
+                            if (dbManager.getDiskManager() != null && dbManager.getDiskManager().getDbName() != null) {
+                                dbName = dbManager.getDiskManager().getDbName();
+                            }
+
+                            String indexPersistPath = dbName + File.separator + "indexes" + File.separator + tableName
+                                    + File.separator + columnName + ".json";
+
+                            index = new InMemoryOrderedIndex(indexPersistPath, tableName, columnName);
+                            Logger.info("Using InMemoryOrderedIndex for {}.{} with path {}", tableName, columnName,
+                                    indexPersistPath);
+                        }
+                    }
+
+                    // 使用混合扫描器，它会智能地选择索引扫描或顺序扫描
+                    if (index != null) {
+                        Logger.info("Using HybridScanOperator for table {} on column {} with search key {}",
+                                tableName, columnName, constantValue);
+                        return new HybridScanOperator(tableName, columnName, constantValue, dbManager, index);
+                    }
+                }
+            }
+        }
+
         PhysicalOperator inputOp = generateOperator(dbManager, logicalFilterOp.getChild());
-        return new FilterOperator(inputOp, logicalFilterOp.getWhereExpr());
+        return new FilterOperator(inputOp, whereExpr);
+    }
+
+    // Helper method to extract a Value from a JSQLParser Expression (literal)
+    // This needs to be robust and handle different types.
+    private static Value getConstantValueFromExpression(Expression expr, DBManager dbManager, TableMeta tableMeta,
+            String columnName) throws DBException {
+        // We need the column's type to correctly create the Value object
+        ColumnMeta columnMeta = tableMeta.getColumnMeta(columnName);
+        if (columnMeta == null) {
+            throw new DBException(ExceptionTypes.ColumnDoesNotExist("Column " + columnName + " not found in table "
+                    + tableMeta.tableName + " for filter value extraction."));
+        }
+        ValueType expectedType = columnMeta.type;
+
+        if (expr instanceof StringValue) {
+            // Assuming ValueType.CHAR can represent various string types like VARCHAR,
+            // TEXT, etc.
+            if (expectedType != ValueType.CHAR) {
+                throw new DBException(ExceptionTypes.TypeMismatch(
+                        "Type mismatch for column " + columnName + ". Expected " + expectedType + " but got CHAR."));
+            }
+            return new Value(((StringValue) expr).getValue());
+        } else if (expr instanceof LongValue) {
+            // Assuming ValueType.INTEGER can represent various integer types like BIGINT,
+            // SMALLINT, etc.
+            if (expectedType != ValueType.INTEGER) {
+                throw new DBException(ExceptionTypes.TypeMismatch(
+                        "Type mismatch for column " + columnName + ". Expected " + expectedType + " but got INTEGER."));
+            }
+            return new Value(((LongValue) expr).getValue());
+        } else if (expr instanceof DoubleValue) {
+            if (expectedType == ValueType.FLOAT) {
+                return new Value((float) ((DoubleValue) expr).getValue());
+            } else if (expectedType == ValueType.DOUBLE) {
+                return new Value(((DoubleValue) expr).getValue());
+            } else {
+                throw new DBException(ExceptionTypes.TypeMismatch("Type mismatch for column " + columnName
+                        + ". Expected " + expectedType + " but got DOUBLE/FLOAT."));
+            }
+        }
+        // Add more types as needed (DateValue, etc.)
+        return null; // Or throw an exception if the expression type is not supported as a constant
     }
 
     private static PhysicalOperator handleJoin(DBManager dbManager, LogicalJoinOperator logicalJoinOp)

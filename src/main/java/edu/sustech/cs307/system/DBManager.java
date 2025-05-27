@@ -12,6 +12,7 @@ import org.pmw.tinylog.Logger;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashMap; // 添加HashMap导入
 import java.util.Map;
 import java.util.Set;
 
@@ -21,6 +22,8 @@ public class DBManager {
     private final DiskManager diskManager;
     private final BufferPool bufferPool;
     private final RecordManager recordManager;
+    private final IndexManager indexManager; // 添加IndexManager
+    private final IndexSynchronizer indexSynchronizer; // 添加索引同步器
 
     public DBManager(DiskManager diskManager, BufferPool bufferPool, RecordManager recordManager,
             MetaManager metaManager) {
@@ -28,6 +31,8 @@ public class DBManager {
         this.bufferPool = bufferPool;
         this.recordManager = recordManager;
         this.metaManager = metaManager;
+        this.indexManager = new IndexManager(metaManager, recordManager); // 传入RecordManager引用
+        this.indexSynchronizer = new IndexSynchronizer(indexManager, metaManager); // 初始化IndexSynchronizer
     }
 
     public BufferPool getBufferPool() {
@@ -44,6 +49,14 @@ public class DBManager {
 
     public MetaManager getMetaManager() {
         return metaManager;
+    }
+
+    public IndexManager getIndexManager() {
+        return indexManager;
+    }
+
+    public IndexSynchronizer getIndexSynchronizer() {
+        return indexSynchronizer;
     }
 
     public boolean isDirExists(String dir) {

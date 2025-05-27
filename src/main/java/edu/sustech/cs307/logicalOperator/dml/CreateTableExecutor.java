@@ -3,6 +3,7 @@ package edu.sustech.cs307.logicalOperator.dml;
 import edu.sustech.cs307.exception.DBException;
 import edu.sustech.cs307.exception.ExceptionTypes;
 import edu.sustech.cs307.meta.ColumnMeta;
+import edu.sustech.cs307.meta.TableMeta; // 添加导入
 import edu.sustech.cs307.system.DBManager;
 import edu.sustech.cs307.value.Value;
 import edu.sustech.cs307.value.ValueType;
@@ -11,6 +12,8 @@ import net.sf.jsqlparser.statement.create.table.ColDataType;
 import org.pmw.tinylog.Logger;
 
 import java.util.ArrayList;
+import java.util.HashMap; // 添加导入
+import java.util.Map; // 添加导入
 
 public class CreateTableExecutor implements DMLExecutor {
     // Logger Logger = LoggerFactory.getLogger(CreateTableExecutor.class); //
@@ -34,6 +37,9 @@ public class CreateTableExecutor implements DMLExecutor {
         if (null == createTableStmt.getColumnDefinitions()) {
             throw new DBException(ExceptionTypes.TableHasNoColumn(table));
         }
+
+        String firstColumnName = null; // 记录第一个列名，用于创建索引
+
         for (var col : createTableStmt.getColumnDefinitions()) {
             // transform the column definition to ColumnMeta
             // we only accept the char, int, float type
@@ -42,11 +48,18 @@ public class CreateTableExecutor implements DMLExecutor {
                 throw new DBException(
                         ExceptionTypes.InvalidSQL(sql, String.format("INVALID COLUMN NAME = %s", colName)));
             }
+
+            // 记录第一个列名
+            if (firstColumnName == null) {
+                firstColumnName = colName;
+            }
+
             ColDataType colType = col.getColDataType();
             if (colType.getDataType().equalsIgnoreCase("char")) {
                 colMapping.add(new ColumnMeta(table, colName, ValueType.CHAR, Value.CHAR_SIZE, offset));
                 offset += Value.CHAR_SIZE;
-            } else if (colType.getDataType().equalsIgnoreCase("int")) {
+            } else if (colType.getDataType().equalsIgnoreCase("int")
+                    || colType.getDataType().equalsIgnoreCase("integer")) {
                 colMapping.add(new ColumnMeta(table, colName, ValueType.INTEGER, Value.INT_SIZE, offset));
                 offset += Value.INT_SIZE;
             } else if (colType.getDataType().equalsIgnoreCase("float")) {
@@ -60,8 +73,36 @@ public class CreateTableExecutor implements DMLExecutor {
                         String.format("CREATE TABLE %s with unsupported type %s", table, colType.getDataType())));
             }
         }
+
+        // 创建表
         dbManager.createTable(table, colMapping);
-        Logger.info("Successfully created table: {}", table); // Modified to Tinylog format
+
+        // 自动为第一个列创建索引定义（如果第一个列存在）
+        if (firstColumnName != null) {
+            try {
+                // 获取刚创建的表的元数据
+                TableMeta tableMeta = dbManager.getMetaManager().getTable(table);
+                if (tableMeta != null) {
+                    // 为第一个列添加索引定义
+                    Map<String, TableMeta.IndexType> indexes = tableMeta.getIndexes();
+                    if (indexes == null) {
+                        indexes = new HashMap<>();
+                    }
+                    indexes.put(firstColumnName, TableMeta.IndexType.BTREE);
+                    tableMeta.setIndexes(indexes);
+
+                    // 保存元数据
+                    dbManager.getMetaManager().saveToJson();
+
+                    Logger.info("Successfully created table: {} with index on column: {}", table, firstColumnName);
+                }
+            } catch (DBException e) {
+                Logger.warn("Failed to create index definition for {}.{}: {}", table, firstColumnName, e.getMessage());
+                Logger.info("Successfully created table: {} (without index)", table);
+            }
+        } else {
+            Logger.info("Successfully created table: {}", table);
+        }
     }
 
 }

@@ -35,6 +35,52 @@ public class Value {
         type = ValueType.CHAR;
     }
 
+    public static Value createValueFromObject(Object obj, ValueType type)
+            throws edu.sustech.cs307.exception.DBException {
+        if (obj == null) {
+            // Representing SQL NULL. Depending on system design,
+            // this might be a specific Value instance or handled by setting value to null.
+            // For now, let's assume a Value object can hold null.
+            return new Value(null, type);
+        }
+        switch (type) {
+            case INTEGER:
+                if (obj instanceof Number)
+                    return new Value(((Number) obj).longValue());
+                break;
+            case FLOAT:
+                if (obj instanceof Number)
+                    return new Value(((Number) obj).floatValue());
+                break;
+            case DOUBLE:
+                if (obj instanceof Number)
+                    return new Value(((Number) obj).doubleValue());
+                break;
+            case CHAR:
+                if (obj instanceof String)
+                    return new Value((String) obj);
+                break;
+            default:
+                // Fallback for UNKNOWN or other types if direct conversion isn't obvious
+                if (type == ValueType.UNKNOWN && obj instanceof String)
+                    return new Value((String) obj);
+                if (type == ValueType.UNKNOWN && obj instanceof Long)
+                    return new Value((Long) obj);
+                if (type == ValueType.UNKNOWN && obj instanceof Double)
+                    return new Value((Double) obj);
+                if (type == ValueType.UNKNOWN && obj instanceof Float)
+                    return new Value((Float) obj);
+                // Add more specific conversions as needed
+                break; // Break before throwing, to allow falling through if type is UNKNOWN but
+                       // handled
+        }
+        // If we reached here and haven't returned, the conversion is not supported or
+        // obj type is unexpected for given ValueType
+        throw new edu.sustech.cs307.exception.DBException(
+                edu.sustech.cs307.exception.ExceptionTypes.UnsupportedValueType("Cannot create Value of type " + type
+                        + " from object " + obj.getClass().getName() + ": " + obj.toString(), type));
+    }
+
     /**
      * 将当前值转换为字节数组。
      * 
