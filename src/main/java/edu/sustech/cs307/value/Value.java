@@ -2,7 +2,7 @@ package edu.sustech.cs307.value;
 
 import java.nio.ByteBuffer;
 
-public class Value {
+public class Value implements Comparable<Value> {
     public Object value;
     public ValueType type;
     public static final int INT_SIZE = 8;
@@ -91,7 +91,6 @@ public class Value {
                 yield new Value(bufferD.getDouble());
             }
             case CHAR -> {
-                ByteBuffer buffer3 = ByteBuffer.wrap(bytes);
                 String s = new String(bytes);
                 yield new Value(s);
             }
@@ -143,5 +142,28 @@ public class Value {
         String repr = value == null ? null : toString();
         result = 31 * result + (repr == null ? 0 : repr.hashCode());
         return result;
+    }
+
+    @Override
+    public int compareTo(Value o) {
+        if (this.type != o.type) {
+            // 类型不同时，按类型名排序
+            return this.type.name().compareTo(o.type.name());
+        }
+        if (this.value == null && o.value == null) return 0;
+        if (this.value == null) return -1;
+        if (o.value == null) return 1;
+        switch (this.type) {
+            case INTEGER:
+                return Long.compare((Long) this.value, (Long) o.value);
+            case FLOAT:
+                return Float.compare((Float) this.value, (Float) o.value);
+            case DOUBLE:
+                return Double.compare((Double) this.value, (Double) o.value);
+            case CHAR:
+                return this.toString().compareTo(o.toString());
+            default:
+                throw new RuntimeException("Unsupported value type: " + type);
+        }
     }
 }
