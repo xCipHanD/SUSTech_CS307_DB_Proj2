@@ -49,8 +49,7 @@ public class LogicalPlanner {
             operator = handleInsert(dbManager, insertStmt);
         } else if (stmt instanceof Update updateStmt) {
             operator = handleUpdate(dbManager, updateStmt);
-        } // TODO: modify the delete operator
-        else if (stmt instanceof Delete deleteStmt) {
+        } else if (stmt instanceof Delete deleteStmt) {
             operator = handleDelete(dbManager, deleteStmt);
         }
         // functional
@@ -146,12 +145,23 @@ public class LogicalPlanner {
             groupByExpressions = plainSelect.getGroupBy().getGroupByExpressions();
         }
 
-        // First project all select items
-        root = new LogicalProjectOperator(root, plainSelect.getSelectItems());
-        // Then apply aggregation if needed
+        // 修复：先应用聚合，再投影
+        // 如果有聚合函数，先处理聚合操作（在原始数据上）
         if (hasAggregates || (groupByExpressions != null && !groupByExpressions.isEmpty())) {
             root = new LogicalAggregateOperator(root, plainSelect.getSelectItems(), groupByExpressions);
         }
+        // 然后应用投影（如果需要的话）
+        // 注意：对于聚合查询，LogicalAggregateOperator已经处理了投影
+        // 只有在非聚合查询时才需要额外的投影操作
+        if (!hasAggregates && (groupByExpressions == null || groupByExpressions.isEmpty())) {
+            root = new LogicalProjectOperator(root, plainSelect.getSelectItems());
+        }
+
+        // 添加ORDER BY支持
+        if (plainSelect.getOrderByElements() != null && !plainSelect.getOrderByElements().isEmpty()) {
+            root = new LogicalOrderByOperator(root, plainSelect.getOrderByElements());
+        }
+
         return root;
     }
 
@@ -171,15 +181,6 @@ public class LogicalPlanner {
         if (deleteStmt.getWhere() != null) {
             root = new LogicalFilterOperator(root, deleteStmt.getWhere());
         }
-        return new LogicalDeleteOperator(root, deleteStmt.getTable().getName(), deleteStmt.getWhere(), dbManager);//
-        // don't
-        // know
-        // is
-        // it
-        // right
-        // to
-        // use
-        // dbmanager
-        // here
+        return new LogicalDeleteOperator(root, deleteStmt.getTable().getName(), deleteStmt.getWhere(), dbManager);
     }
 }

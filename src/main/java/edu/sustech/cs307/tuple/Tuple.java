@@ -117,12 +117,35 @@ public abstract class Tuple {
             return new Value(((LongValue) expr).getValue(), ValueType.INTEGER);
         } else if (expr instanceof Column) {
             Column col = (Column) expr;
-            return getValue(new TabCol(col.getTableName(), col.getColumnName()));
+            String tableName = col.getTableName();
+            String columnName = col.getColumnName();
+
+            // 如果表名为null，尝试从当前tuple的schema中推断
+            if (tableName == null) {
+                // 对于TableTuple，使用其表名
+                if (this instanceof TableTuple) {
+                    TableTuple tableTuple = (TableTuple) this;
+                    tableName = tableTuple.getTableName();
+                } else {
+                    // 对于其他类型的tuple，尝试在schema中查找列名
+                    TabCol[] schema = getTupleSchema();
+                    for (TabCol tabCol : schema) {
+                        if (tabCol.getColumnName().equalsIgnoreCase(columnName)) {
+                            tableName = tabCol.getTableName();
+                            break;
+                        }
+                    }
+                }
+            }
+
+            TabCol tabCol = new TabCol(tableName, columnName);
+            Value result = getValue(tabCol);
+            return result;
         } else if (expr instanceof Function) {
             Function function = (Function) expr;
             String functionName = function.getName();
             // function.getParameters() returns a raw ExpressionList
-            ExpressionList expressionList = function.getParameters();
+            ExpressionList<?> expressionList = function.getParameters();
 
             if (functionName.equalsIgnoreCase("float")) {
                 if (expressionList != null && !expressionList.isEmpty()) {
@@ -191,8 +214,7 @@ public abstract class Tuple {
                 } else { // INTEGER
                     return new Value((long) sum, ValueType.INTEGER);
                 }
-            }
-            else {
+            } else {
                 throw new DBException(ExceptionTypes.UnsupportedExpression(expr));
             }
         } else {
