@@ -28,6 +28,19 @@
             <version>4.1.117.Final</version>
         </dependency>
 
+        <!-- HTTP server support -->
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-codec-http</artifactId>
+            <version>4.1.117.Final</version>
+        </dependency>
+
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-transport</artifactId>
+            <version>4.1.117.Final</version>
+        </dependency>
+
         <!-- log -->
         <dependency>
             <groupId>org.tinylog</groupId>
