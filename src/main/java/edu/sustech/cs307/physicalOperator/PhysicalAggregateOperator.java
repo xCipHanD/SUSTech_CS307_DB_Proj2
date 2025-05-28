@@ -4,10 +4,10 @@ import edu.sustech.cs307.exception.DBException;
 import edu.sustech.cs307.exception.ExceptionTypes;
 import edu.sustech.cs307.logicalOperator.LogicalAggregateOperator;
 import edu.sustech.cs307.meta.ColumnMeta;
-import edu.sustech.cs307.meta.TabCol;
 import edu.sustech.cs307.tuple.TempTuple;
 import edu.sustech.cs307.tuple.Tuple;
 import edu.sustech.cs307.value.Value;
+import edu.sustech.cs307.value.ValueComparer;
 import edu.sustech.cs307.value.ValueType;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.Function;
@@ -15,7 +15,6 @@ import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.statement.select.SelectItem;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -67,19 +66,7 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
             if (item.getExpression() instanceof Function func) {
                 String alias = item.getAlias() != null ? item.getAlias().getName() : func.toString();
                 // 根据函数确定类型，例如，COUNT为INTEGER
-                ValueType type = ValueType.INTEGER; // 默认值，为SUM、AVG等调整
-                if (func.getName().equalsIgnoreCase("COUNT")) {
-                    type = ValueType.INTEGER;
-                } else if (func.getName().equalsIgnoreCase("SUM")) {
-                    // SUM类型取决于输入类型，可能是INTEGER或DOUBLE
-                    // 这需要基于子模式的更复杂的类型推断
-                    type = ValueType.INTEGER; // 占位符
-                } else if (func.getName().equalsIgnoreCase("AVG")) {
-                    type = ValueType.DOUBLE; // AVG通常是浮点数/双精度型
-                } else if (func.getName().equalsIgnoreCase("MIN") || func.getName().equalsIgnoreCase("MAX")) {
-                    // 类型取决于输入类型
-                    type = ValueType.INTEGER; // 占位符
-                }
+                ValueType type = inferAggregateType(func);
                 // 提取表名
                 String tableName = null;
                 if (func.getParameters() != null && func.getParameters().getExpressions() != null
@@ -105,156 +92,474 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
         // 聚合逻辑
         if (groupByExpressions == null || groupByExpressions.isEmpty()) {
             // 没有GROUP BY的简单聚合：始终产生一行
-            // 为COUNT函数计算计数
-            Map<String, Long> columnCounts = new HashMap<>();
-            for (SelectItem<?> item : selectItems) {
-                if (item.getExpression() instanceof Function func
-                        && func.getName().equalsIgnoreCase("COUNT")) {
-                    columnCounts.put(func.toString(), 0L);
-                }
-            }
-            while (child.hasNext()) {
-                child.Next();
-                Tuple t = child.Current();
-                if (t == null)
-                    continue;
-                for (SelectItem<?> item : selectItems) {
-                    if (item.getExpression() instanceof Function func
-                            && func.getName().equalsIgnoreCase("COUNT")) {
-                        String key = func.toString();
-                        Long cnt = columnCounts.get(key);
-                        // COUNT(column) 与 COUNT(*)
-                        if (func.getParameters() != null && func.getParameters().getExpressions() != null
-                                && !func.getParameters().getExpressions().isEmpty()) {
-                            Expression p = func.getParameters().getExpressions().get(0);
-                            // 目前没null检查
-                            cnt++;
-                        } else {
-                            cnt++;
-                        }
-                        columnCounts.put(key, cnt);
-                    }
-                }
-            }
-            // 构建结果行
-            List<Value> row = new ArrayList<>();
-            for (SelectItem<?> item : selectItems) {
-                Function func = (Function) item.getExpression();
-                if (func.getName().equalsIgnoreCase("COUNT")) {
-                    row.add(new Value(columnCounts.get(func.toString())));
-                } else {
-                    row.add(new Value(null, ValueType.UNKNOWN));
-                }
-            }
-            resultTuples.add(new TempTuple(row));
+            performSimpleAggregation(selectItems);
         } else {
             // 带有GROUP BY的聚合
-            Map<List<Value>, List<Value>> groupedAggregates = new HashMap<>();
-            Map<List<Value>, Map<String, Long>> groupColumnCounts = new HashMap<>(); // 为每个分组的每个COUNT函数存储计数
-
-            while (child.hasNext()) {
-                child.Next();
-                Tuple currentTuple = child.Current();
-                if (currentTuple == null)
-                    continue;
-
-                List<Value> groupByKey = new ArrayList<>();
-                for (Expression expr : groupByExpressions) {
-                    groupByKey.add(currentTuple.evaluateExpression(expr));
-                }
-
-                groupedAggregates.putIfAbsent(groupByKey,
-                        new ArrayList<>(Collections.nCopies(selectItems.size(), null))); // 聚合值的占位符
-                groupColumnCounts.putIfAbsent(groupByKey, new HashMap<>());
-
-                Map<String, Long> currentGroupCounts = groupColumnCounts.get(groupByKey);
-
-                for (int i = 0; i < selectItems.size(); i++) {
-                    SelectItem<?> item = selectItems.get(i);
-                    if (item.getExpression() instanceof Function func) {
-                        if (func.getName().equalsIgnoreCase("COUNT")) {
-                            String countKey = func.toString();
-                            currentGroupCounts.putIfAbsent(countKey, 0L);
-
-                            // 检查是COUNT(*)还是COUNT(column)
-                            if (func.getParameters() != null && func.getParameters().getExpressions() != null
-                                    && !func.getParameters().getExpressions().isEmpty()) {
-                                Expression paramExpr = func.getParameters().getExpressions().get(0);
-                                if (paramExpr instanceof Column column) {
-                                    // 对于COUNT(column)，我们需要检查列值是否为null
-                                    Value val = currentTuple.evaluateExpression(column);
-                                    if (val != null && !val.isNull()) {
-                                        // 只有在列值不为null时才增加计数
-                                        currentGroupCounts.put(countKey, currentGroupCounts.get(countKey) + 1);
-                                    }
-                                } else {
-                                    // 其他表达式如COUNT(1)，总是增加计数
-                                    currentGroupCounts.put(countKey, currentGroupCounts.get(countKey) + 1);
-                                }
-                            } else {
-                                // COUNT(*)，总是增加计数
-                                currentGroupCounts.put(countKey, currentGroupCounts.get(countKey) + 1);
-                            }
-                        }
-                        // 为每个组添加SUM, AVG, MIN, MAX的逻辑
-                    } else {
-                        // 如果不是函数，那么一定是GROUP BY的键（或者涉及它们的表达式）
-                        // ProjectOperator将处理这些值的投影
-                        // 这里只确保GROUP BY键本身是输出的一部分
-                        // 这些值已经在groupByKey中
-                    }
-                }
-            }
-
-            for (Map.Entry<List<Value>, List<Value>> entry : groupedAggregates.entrySet()) {
-                List<Value> groupByKey = entry.getKey();
-                List<Value> finalRow = new ArrayList<>(groupByKey); // 从分组值开始
-
-                // 计算该组的最终聚合值
-                List<Value> aggValuesForRow = new ArrayList<>();
-                Map<String, Long> currentGroupCounts = groupColumnCounts.get(groupByKey);
-
-                for (SelectItem<?> item : selectItems) {
-                    if (item.getExpression() instanceof Function func) {
-                        if (func.getName().equalsIgnoreCase("COUNT")) {
-                            String countKey = func.toString();
-                            long countValue = currentGroupCounts.getOrDefault(countKey, 0L);
-                            aggValuesForRow.add(new Value(countValue));
-                        }
-                        // 为此组添加SUM, AVG, MIN, MAX的结果
-                        else {
-                            aggValuesForRow.add(new Value(null, ValueType.UNKNOWN)); // 空占位符
-                        }
-                    } else {
-                        // 这是一个非聚合表达式。它应该是分组键之一。
-                        // ProjectOperator负责选择它。
-                        // PhysicalAggregateOperator的输出模式（因此TempTuple）
-                        // 应与分组键+聚合函数结果对齐。
-                        // 我们可以添加一个占位符，或确保ProjectOperator处理它。
-                        // 现在，我们假设ProjectOperator将从groupByKey部分选择。
-                    }
-                }
-                finalRow.addAll(aggValuesForRow);
-                resultTuples.add(new TempTuple(finalRow));
-            }
-
-            // 空表GROUP BY的特殊处理
-            if (resultTuples.isEmpty() && child.outputSchema() != null && !child.outputSchema().isEmpty() &&
-                    logicalOperator.getAggregateExpressions().stream()
-                            .anyMatch(si -> si.getExpression() instanceof Function
-                                    && ((Function) si.getExpression()).getName().equalsIgnoreCase("COUNT"))
-                    &&
-                    (groupByExpressions != null && !groupByExpressions.isEmpty())) {
-                // 如果GROUP BY存在，并且请求了COUNT，但没有形成组（过滤后的空输入）
-                // SQL标准：COUNT为每个*将*存在（如果有数据）的组返回0。
-                // 这很复杂。对于GROUP BY + COUNT的空输入，一个更简单的方法是没有行。
-                // 然而，如果查询是`SELECT COUNT(*) FROM my_table GROUP BY
-                // col_with_no_rows_matching_where`，
-                // 它应该不产生输出。
-                // 如果是`SELECT COUNT(col) FROM my_table GROUP BY grp_col`且表为空，则不输出。
-            }
+            performGroupByAggregation(selectItems, groupByExpressions);
         }
         child.Close();
+    }
+
+    /**
+     * 推断聚合函数的返回类型
+     */
+    private ValueType inferAggregateType(Function func) {
+        String funcName = func.getName().toUpperCase();
+        switch (funcName) {
+            case "COUNT":
+                return ValueType.INTEGER;
+            case "SUM":
+                // SUM类型取决于输入类型，这里需要更复杂的类型推断
+                // 为简化，我们假设是 INTEGER，但实际应该基于列类型
+                return inferSumType(func);
+            case "AVG":
+                return ValueType.DOUBLE; // AVG通常是浮点数/双精度型
+            case "MIN":
+            case "MAX":
+                // MIN/MAX类型取决于输入类型
+                return inferMinMaxType(func);
+            default:
+                return ValueType.INTEGER; // 默认值
+        }
+    }
+
+    /**
+     * 推断SUM函数的返回类型
+     */
+    private ValueType inferSumType(Function func) {
+        if (func.getParameters() != null && func.getParameters().getExpressions() != null
+                && !func.getParameters().getExpressions().isEmpty()) {
+            Expression paramExpr = func.getParameters().getExpressions().get(0);
+            if (paramExpr instanceof Column column) {
+                ColumnMeta colMeta = findColumnMeta(column, child.outputSchema());
+                if (colMeta != null) {
+                    // 基于列类型返回适当的SUM类型
+                    switch (colMeta.type) {
+                        case INTEGER:
+                            return ValueType.INTEGER;
+                        case FLOAT:
+                            return ValueType.FLOAT;
+                        case DOUBLE:
+                            return ValueType.DOUBLE;
+                        default:
+                            return ValueType.INTEGER;
+                    }
+                }
+            }
+        }
+        return ValueType.INTEGER; // 默认
+    }
+
+    /**
+     * 推断MIN/MAX函数的返回类型
+     */
+    private ValueType inferMinMaxType(Function func) {
+        if (func.getParameters() != null && func.getParameters().getExpressions() != null
+                && !func.getParameters().getExpressions().isEmpty()) {
+            Expression paramExpr = func.getParameters().getExpressions().get(0);
+            if (paramExpr instanceof Column column) {
+                ColumnMeta colMeta = findColumnMeta(column, child.outputSchema());
+                if (colMeta != null) {
+                    return colMeta.type; // MIN/MAX保持原始类型
+                }
+            }
+        }
+        return ValueType.INTEGER; // 默认
+    }
+
+    /**
+     * 执行简单聚合（无GROUP BY）
+     */
+    private void performSimpleAggregation(List<SelectItem<?>> selectItems) throws DBException {
+        // 初始化聚合计算器
+        Map<String, Object> aggregateValues = new HashMap<>();
+
+        for (SelectItem<?> item : selectItems) {
+            if (item.getExpression() instanceof Function func) {
+                String key = func.toString();
+                String funcName = func.getName().toUpperCase();
+
+                switch (funcName) {
+                    case "COUNT":
+                        aggregateValues.put(key, 0L);
+                        break;
+                    case "SUM":
+                        aggregateValues.put(key, null); // 初始为null
+                        break;
+                    case "MIN":
+                    case "MAX":
+                        aggregateValues.put(key, null); // 初始为null
+                        break;
+                }
+            }
+        }
+
+        // 处理每一行数据
+        while (child.hasNext()) {
+            child.Next();
+            Tuple tuple = child.Current();
+            if (tuple == null)
+                continue;
+
+            for (SelectItem<?> item : selectItems) {
+                if (item.getExpression() instanceof Function func) {
+                    String key = func.toString();
+                    String funcName = func.getName().toUpperCase();
+
+                    switch (funcName) {
+                        case "COUNT":
+                            updateCount(aggregateValues, key, func, tuple);
+                            break;
+                        case "SUM":
+                            updateSum(aggregateValues, key, func, tuple);
+                            break;
+                        case "MIN":
+                            updateMin(aggregateValues, key, func, tuple);
+                            break;
+                        case "MAX":
+                            updateMax(aggregateValues, key, func, tuple);
+                            break;
+                    }
+                }
+            }
+        }
+
+        // 构建结果行
+        List<Value> row = new ArrayList<>();
+        for (SelectItem<?> item : selectItems) {
+            if (item.getExpression() instanceof Function func) {
+                String key = func.toString();
+                Object aggValue = aggregateValues.get(key);
+                row.add(convertToValue(aggValue, func));
+            } else {
+                row.add(new Value(null, ValueType.UNKNOWN));
+            }
+        }
+        resultTuples.add(new TempTuple(row));
+    }
+
+    /**
+     * 执行分组聚合（带GROUP BY）
+     */
+    private void performGroupByAggregation(List<SelectItem<?>> selectItems, List<Expression> groupByExpressions)
+            throws DBException {
+        Map<List<Value>, Map<String, Object>> groupedAggregates = new HashMap<>();
+
+        while (child.hasNext()) {
+            child.Next();
+            Tuple currentTuple = child.Current();
+            if (currentTuple == null)
+                continue;
+
+            List<Value> groupByKey = new ArrayList<>();
+            for (Expression expr : groupByExpressions) {
+                groupByKey.add(currentTuple.evaluateExpression(expr));
+            }
+
+            // 初始化该组的聚合值
+            groupedAggregates.putIfAbsent(groupByKey, new HashMap<>());
+            Map<String, Object> groupAggregates = groupedAggregates.get(groupByKey);
+
+            for (SelectItem<?> item : selectItems) {
+                if (item.getExpression() instanceof Function func) {
+                    String key = func.toString();
+                    String funcName = func.getName().toUpperCase();
+
+                    // 如果这是该组第一次处理此聚合函数，初始化
+                    if (!groupAggregates.containsKey(key)) {
+                        switch (funcName) {
+                            case "COUNT":
+                                groupAggregates.put(key, 0L);
+                                break;
+                            case "SUM":
+                            case "MIN":
+                            case "MAX":
+                                groupAggregates.put(key, null);
+                                break;
+                        }
+                    }
+
+                    // 更新聚合值
+                    switch (funcName) {
+                        case "COUNT":
+                            updateCount(groupAggregates, key, func, currentTuple);
+                            break;
+                        case "SUM":
+                            updateSum(groupAggregates, key, func, currentTuple);
+                            break;
+                        case "MIN":
+                            updateMin(groupAggregates, key, func, currentTuple);
+                            break;
+                        case "MAX":
+                            updateMax(groupAggregates, key, func, currentTuple);
+                            break;
+                    }
+                }
+            }
+        }
+
+        // 构建结果
+        for (Map.Entry<List<Value>, Map<String, Object>> entry : groupedAggregates.entrySet()) {
+            List<Value> groupByKey = entry.getKey();
+            Map<String, Object> groupAggregates = entry.getValue();
+
+            List<Value> finalRow = new ArrayList<>(groupByKey); // 从分组值开始
+
+            // 添加聚合函数结果
+            for (SelectItem<?> item : selectItems) {
+                if (item.getExpression() instanceof Function func) {
+                    String key = func.toString();
+                    Object aggValue = groupAggregates.get(key);
+                    finalRow.add(convertToValue(aggValue, func));
+                }
+            }
+
+            resultTuples.add(new TempTuple(finalRow));
+        }
+    }
+
+    /**
+     * 更新COUNT聚合
+     */
+    private void updateCount(Map<String, Object> aggregates, String key, Function func, Tuple tuple)
+            throws DBException {
+        Long count = (Long) aggregates.get(key);
+
+        // 检查是COUNT(*)还是COUNT(column)
+        if (func.getParameters() != null && func.getParameters().getExpressions() != null
+                && !func.getParameters().getExpressions().isEmpty()) {
+            Expression paramExpr = func.getParameters().getExpressions().get(0);
+            if (paramExpr instanceof Column column) {
+                // 对于COUNT(column)，我们需要检查列值是否为null
+                Value val = tuple.evaluateExpression(column);
+                if (val != null && !val.isNull()) {
+                    // 只有在列值不为null时才增加计数
+                    aggregates.put(key, count + 1);
+                }
+            } else {
+                // 其他表达式如COUNT(1)，总是增加计数
+                aggregates.put(key, count + 1);
+            }
+        } else {
+            // COUNT(*)，总是增加计数
+            aggregates.put(key, count + 1);
+        }
+    }
+
+    /**
+     * 更新SUM聚合
+     */
+    private void updateSum(Map<String, Object> aggregates, String key, Function func, Tuple tuple) throws DBException {
+        if (func.getParameters() != null && func.getParameters().getExpressions() != null
+                && !func.getParameters().getExpressions().isEmpty()) {
+            Expression paramExpr = func.getParameters().getExpressions().get(0);
+            if (paramExpr instanceof Column column) {
+                Value val = tuple.evaluateExpression(column);
+                if (val != null && !val.isNull()) {
+                    Object currentSum = aggregates.get(key);
+                    Object newSum = addValues(currentSum, val);
+                    aggregates.put(key, newSum);
+                }
+            }
+        }
+    }
+
+    /**
+     * 更新MIN聚合
+     */
+    private void updateMin(Map<String, Object> aggregates, String key, Function func, Tuple tuple) throws DBException {
+        if (func.getParameters() != null && func.getParameters().getExpressions() != null
+                && !func.getParameters().getExpressions().isEmpty()) {
+            Expression paramExpr = func.getParameters().getExpressions().get(0);
+            if (paramExpr instanceof Column column) {
+                Value val = tuple.evaluateExpression(column);
+                if (val != null && !val.isNull()) {
+                    Object currentMin = aggregates.get(key);
+                    Object newMin = minValue(currentMin, val);
+                    aggregates.put(key, newMin);
+                }
+            }
+        }
+    }
+
+    /**
+     * 更新MAX聚合
+     */
+    private void updateMax(Map<String, Object> aggregates, String key, Function func, Tuple tuple) throws DBException {
+        if (func.getParameters() != null && func.getParameters().getExpressions() != null
+                && !func.getParameters().getExpressions().isEmpty()) {
+            Expression paramExpr = func.getParameters().getExpressions().get(0);
+            if (paramExpr instanceof Column column) {
+                Value val = tuple.evaluateExpression(column);
+                if (val != null && !val.isNull()) {
+                    Object currentMax = aggregates.get(key);
+                    Object newMax = maxValue(currentMax, val);
+                    aggregates.put(key, newMax);
+                }
+            }
+        }
+    }
+
+    /**
+     * 将两个值相加
+     */
+    private Object addValues(Object current, Value val) {
+        if (current == null) {
+            // 第一个值
+            switch (val.type) {
+                case INTEGER:
+                    return (Long) val.value;
+                case FLOAT:
+                    return (Float) val.value;
+                case DOUBLE:
+                    return (Double) val.value;
+                case CHAR:
+                    throw new RuntimeException("SUM operation not supported for CHAR type");
+                case UNKNOWN:
+                    throw new RuntimeException("SUM operation not supported for UNKNOWN type");
+                default:
+                    return null;
+            }
+        } else {
+            // 累加
+            switch (val.type) {
+                case INTEGER:
+                    if (current instanceof Long) {
+                        return (Long) current + (Long) val.value;
+                    } else if (current instanceof Float) {
+                        return (Float) current + (Long) val.value;
+                    } else if (current instanceof Double) {
+                        return (Double) current + (Long) val.value;
+                    }
+                    break;
+                case FLOAT:
+                    if (current instanceof Long) {
+                        return (Long) current + (Float) val.value;
+                    } else if (current instanceof Float) {
+                        return (Float) current + (Float) val.value;
+                    } else if (current instanceof Double) {
+                        return (Double) current + (Float) val.value;
+                    }
+                    break;
+                case DOUBLE:
+                    if (current instanceof Long) {
+                        return (Long) current + (Double) val.value;
+                    } else if (current instanceof Float) {
+                        return (Float) current + (Double) val.value;
+                    } else if (current instanceof Double) {
+                        return (Double) current + (Double) val.value;
+                    }
+                    break;
+                case CHAR:
+                    throw new RuntimeException("SUM operation not supported for CHAR type");
+                case UNKNOWN:
+                    throw new RuntimeException("SUM operation not supported for UNKNOWN type");
+            }
+        }
+        return current;
+    }
+
+    /**
+     * 比较并返回较小值
+     */
+    private Object minValue(Object current, Value val) {
+        if (val == null || val.isNull()) {
+            return current;
+        }
+
+        if (current == null) {
+            // 第一个值
+            return getValueObject(val);
+        } else {
+            try {
+                Value currentVal = createValueFromObject(current);
+                if (currentVal != null && ValueComparer.compare(val, currentVal) < 0) {
+                    return getValueObject(val);
+                }
+            } catch (DBException e) {
+                // 比较失败时保持当前值
+                return current;
+            }
+        }
+        return current;
+    }
+
+    /**
+     * 比较并返回较大值
+     */
+    private Object maxValue(Object current, Value val) {
+        if (val == null || val.isNull()) {
+            return current;
+        }
+
+        if (current == null) {
+            // 第一个值
+            return getValueObject(val);
+        } else {
+            try {
+                Value currentVal = createValueFromObject(current);
+                if (currentVal != null && ValueComparer.compare(val, currentVal) > 0) {
+                    return getValueObject(val);
+                }
+            } catch (DBException e) {
+                // 比较失败时保持当前值
+                return current;
+            }
+        }
+        return current;
+    }
+
+    /**
+     * 从Value对象获取原始值
+     */
+    private Object getValueObject(Value val) {
+        return val.value;
+    }
+
+    /**
+     * 从Object创建Value对象，需要正确推断类型
+     */
+    private Value createValueFromObject(Object obj) {
+        if (obj instanceof Long) {
+            return new Value((Long) obj, ValueType.INTEGER);
+        } else if (obj instanceof Float) {
+            return new Value((Float) obj, ValueType.FLOAT);
+        } else if (obj instanceof Double) {
+            return new Value((Double) obj, ValueType.DOUBLE);
+        } else if (obj instanceof String) {
+            return new Value((String) obj, ValueType.CHAR);
+        }
+        return null;
+    }
+
+    /**
+     * 将聚合结果转换为Value对象
+     */
+    private Value convertToValue(Object aggValue, Function func) {
+        String funcName = func.getName().toUpperCase();
+
+        if (aggValue == null) {
+            // 对于没有数据的情况
+            switch (funcName) {
+                case "COUNT":
+                    return new Value(0L, ValueType.INTEGER); // COUNT返回0
+                default:
+                    return new Value(null, inferAggregateType(func)); // 其他函数返回NULL
+            }
+        }
+
+        // 确保返回的Value对象有正确的类型信息
+        if (aggValue instanceof Long) {
+            return new Value((Long) aggValue, ValueType.INTEGER);
+        } else if (aggValue instanceof Float) {
+            return new Value((Float) aggValue, ValueType.FLOAT);
+        } else if (aggValue instanceof Double) {
+            return new Value((Double) aggValue, ValueType.DOUBLE);
+        } else if (aggValue instanceof String) {
+            return new Value((String) aggValue, ValueType.CHAR);
+        }
+
+        return new Value(null, inferAggregateType(func));
     }
 
     private ColumnMeta findColumnMeta(Column column, ArrayList<ColumnMeta> searchSchema) {
@@ -319,11 +624,7 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
             for (SelectItem<?> item : selectItems) {
                 if (item.getExpression() instanceof Function func) {
                     String alias = item.getAlias() != null ? item.getAlias().getName() : func.toString();
-                    ValueType type = ValueType.INTEGER; // 默认
-                    if (func.getName().equalsIgnoreCase("COUNT"))
-                        type = ValueType.INTEGER;
-                    else if (func.getName().equalsIgnoreCase("AVG"))
-                        type = ValueType.DOUBLE;
+                    ValueType type = inferAggregateType(func);
                     this.schema.add(new ColumnMeta(null, alias, type, 0, this.schema.size()));
                 } else if (item.getExpression() instanceof Column col && groupByExpressions == null) {
                     // 如果没有分组，这种情况理想情况下不应由此运算符构建

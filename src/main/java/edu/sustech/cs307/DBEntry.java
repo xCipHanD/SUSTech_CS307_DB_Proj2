@@ -1,6 +1,8 @@
 package edu.sustech.cs307;
 
 import edu.sustech.cs307.exception.DBException;
+import edu.sustech.cs307.exception.ExceptionTypes;
+import edu.sustech.cs307.http.HttpServer;
 import edu.sustech.cs307.logicalOperator.LogicalOperator;
 import edu.sustech.cs307.meta.ColumnMeta;
 import edu.sustech.cs307.meta.MetaManager;
@@ -31,10 +33,12 @@ public class DBEntry {
     public static final String DB_NAME = "CS307-DB";
     // for now, we use 256 * 512 * 4096 bytes = 512MB as the pool size
     public static final int POOL_SIZE = 256 * 512;
+    public static final int HTTP_PORT = 8080;
 
     public static void printHelp() {
         Logger.info("Type 'exit' to exit the program.");
         Logger.info("Type 'help' to see this message again.");
+        Logger.info("HTTP API is available at http://localhost:" + HTTP_PORT + "?sql=<your_sql_query>");
     }
 
     public static void main(String[] args) throws DBException {
@@ -43,6 +47,8 @@ public class DBEntry {
         Logger.info("Hello, This is CS307-DB!");
         Logger.info("Initializing...");
         DBManager dbManager = null;
+        HttpServer httpServer = null;
+
         try {
             Map<String, Integer> disk_manager_meta = new HashMap<>(DiskManager.read_disk_manager_meta());
             DiskManager diskManager = new DiskManager(DB_NAME, disk_manager_meta);
@@ -51,11 +57,68 @@ public class DBEntry {
             MetaManager metaManager = new MetaManager(DB_NAME + "/meta");
             dbManager = new DBManager(diskManager, bufferPool, recordManager, metaManager);
 
+            // Start HTTP server and wait for it to be ready
+            httpServer = new HttpServer(HTTP_PORT, dbManager);
+            final HttpServer finalHttpServer = httpServer;
+            final Object serverStartLock = new Object();
+            final boolean[] serverStarted = { false };
+            final Exception[] serverError = { null };
+
+            Thread httpThread = new Thread(() -> {
+                try {
+                    finalHttpServer.start();
+                    synchronized (serverStartLock) {
+                        serverStarted[0] = true;
+                        serverStartLock.notify();
+                    }
+                    // Keep the server running
+                    try {
+                        Thread.currentThread().join();
+                    } catch (InterruptedException e) {
+                        Logger.info("HTTP server thread interrupted");
+                        Thread.currentThread().interrupt();
+                    }
+                } catch (InterruptedException e) {
+                    Logger.info("HTTP server interrupted");
+                    Thread.currentThread().interrupt();
+                } catch (Exception e) {
+                    Logger.error("HTTP server error: " + e.getMessage());
+                    synchronized (serverStartLock) {
+                        serverError[0] = e;
+                        serverStartLock.notify();
+                    }
+                }
+            });
+            httpThread.setDaemon(true);
+            httpThread.start();
+            synchronized (serverStartLock) {
+                while (!serverStarted[0] && serverError[0] == null) {
+                    try {
+                        serverStartLock.wait(5000);
+                        break;
+                    } catch (InterruptedException e) {
+                        Logger.error("Interrupted while waiting for HTTP server to start");
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+            }
+            if (serverError[0] != null) {
+                Logger.error("Failed to start HTTP server: " + serverError[0].getMessage());
+                throw new DBException(
+                        ExceptionTypes.BadIOError("HTTP server startup failed: " + serverError[0].getMessage()));
+            }
+
+            if (!serverStarted[0]) {
+                Logger.error("HTTP server startup timed out");
+                throw new DBException(ExceptionTypes.BadIOError("HTTP server startup timed out"));
+            }
         } catch (DBException e) {
             Logger.error(e.getMessage());
             Logger.error("An error occurred during initializing. Exiting....");
             return;
         }
+
         String sql = "";
         boolean running = true;
         // initialize LineReader once to retain buffer across iterations
@@ -69,6 +132,7 @@ public class DBEntry {
             Logger.error("Failed to initialize input reader: " + e.getMessage());
             return;
         }
+
         try {
             while (running) {
                 try {
@@ -138,6 +202,10 @@ public class DBEntry {
             dbManager.getBufferPool().FlushAllPages("");
             Logger.error("Some error occurred. Exiting after persistdata...");
         } finally {
+            if (httpServer != null) {
+                httpServer.shutdown();
+                Logger.info("HTTP server shut down");
+            }
             if (dbManager != null) {
                 try {
                     dbManager.closeDBManager();
@@ -170,7 +238,7 @@ public class DBEntry {
 
         if (columnMetas.isEmpty()) {
             if (values != null && values.length == 1 && values[0] != null && !values[0].isNull()) {
-                sb.append(StringUtils.center(values[0].toString(), 15, ' ')).append("|");
+                sb.append(StringUtils.center(values[0].toString().trim(), 15, ' ')).append("|");
             } else {
                 sb.append(StringUtils.center("0", 15, ' ')).append("|");
             }

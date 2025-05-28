@@ -155,8 +155,7 @@ public class Value {
             case CHAR -> {
                 byte[] bytes = ((String) this.value).getBytes();
                 String s = new String(bytes);
-                s = s.replaceAll("\0", "");
-                return s;
+                return s.trim();
             }
             default -> throw new RuntimeException("Unsupported value type: " + type);
         }
