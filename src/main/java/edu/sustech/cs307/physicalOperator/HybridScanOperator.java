@@ -39,14 +39,36 @@ public class HybridScanOperator implements PhysicalOperator {
         this.usingIndexScan = false;
     }
 
+    /**
+     * 智能选择扫描策略，考虑表大小和查询类型
+     */
+    private boolean shouldUseIndexScan(DBManager dbManager, String tableName, Value searchKey) throws DBException {
+        try {
+            TableMeta tableMeta = dbManager.getMetaManager().getTable(tableName);
+            long fileSize = dbManager.getDiskManager().GetFileSize(tableName + "/data");
+            if (fileSize < 10 * 1024) {
+                Logger.info("Table {} is small ({}KB), using SeqScan directly", tableName, fileSize / 1024);
+                return false;
+            }
+            if (searchKey == null) {
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            Logger.warn("Failed to determine scan strategy, falling back to SeqScan: {}", e.getMessage());
+            return false;
+        }
+    }
+
     @Override
     public void Begin() throws DBException {
         if (isOpen) {
             return;
         }
 
-        // 如果有索引可用
-        if (index != null) {
+        boolean useIndex = shouldUseIndexScan(dbManager, tableName, searchKey);
+
+        if (index != null && useIndex) {
             try {
                 if (searchKey != null) {
                     // 有搜索键，使用索引进行精确查找
@@ -54,20 +76,10 @@ public class HybridScanOperator implements PhysicalOperator {
                             index);
                     indexScan.Begin();
 
-                    // 检查索引扫描是否有结果
-                    if (indexScan.hasNext()) {
-                        currentOperator = indexScan;
-                        usingIndexScan = true;
-                        Logger.info("Using IndexScanOperator for table {} on column {} with search key {}",
-                                tableName, columnName, searchKey);
-                    } else {
-                        // 索引扫描没有结果，关闭并回退到顺序扫描
-                        indexScan.Close();
-                        currentOperator = createSeqScanWithFilter();
-                        currentOperator.Begin();
-                        usingIndexScan = false;
-                        Logger.info("Index scan returned no results, falling back to SeqScan for table {}", tableName);
-                    }
+                    currentOperator = indexScan;
+                    usingIndexScan = true;
+                    Logger.info("Using IndexScanOperator for table {} on column {} with search key {}",
+                            tableName, columnName, searchKey);
                 } else {
                     // 没有搜索键，进行全表扫描，B+树索引不适合全表扫描，直接使用顺序扫描
                     currentOperator = new SeqScanOperator(tableName, dbManager);
@@ -86,11 +98,11 @@ public class HybridScanOperator implements PhysicalOperator {
                 usingIndexScan = false;
             }
         } else {
-            // 没有索引，直接使用顺序扫描
+            // 智能选择：对于小表或没有索引，直接使用顺序扫描
             currentOperator = createSeqScanWithFilter();
             currentOperator.Begin();
             usingIndexScan = false;
-            Logger.info("No index available, using SeqScan for table {}", tableName);
+            Logger.info("Using SeqScan for table {} (small table or no suitable index)", tableName);
         }
 
         isOpen = true;
