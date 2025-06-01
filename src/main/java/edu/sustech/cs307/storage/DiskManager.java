@@ -164,6 +164,18 @@ public class DiskManager {
     }
 
     /**
+     * 检查指定的文件是否存在。
+     * 
+     * @param filename 要检查的文件名
+     * @return 如果文件存在则返回 true，否则返回 false
+     */
+    public boolean fileExists(String filename) {
+        String real_path = currentDir + "/" + filename;
+        File file = new File(real_path);
+        return file.exists();
+    }
+
+    /**
      * 创建一个新文件。
      * 
      * @param filename 文件名

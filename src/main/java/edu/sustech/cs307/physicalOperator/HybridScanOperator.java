@@ -7,6 +7,10 @@ import edu.sustech.cs307.system.DBManager;
 import edu.sustech.cs307.tuple.Tuple;
 import edu.sustech.cs307.index.Index;
 import edu.sustech.cs307.value.Value;
+import edu.sustech.cs307.value.ValueType;
+import net.sf.jsqlparser.expression.operators.relational.EqualsTo;
+import net.sf.jsqlparser.schema.Column;
+
 import org.pmw.tinylog.Logger;
 
 import java.util.ArrayList;
@@ -65,23 +69,13 @@ public class HybridScanOperator implements PhysicalOperator {
                         Logger.info("Index scan returned no results, falling back to SeqScan for table {}", tableName);
                     }
                 } else {
-                    // 没有搜索键，进行全表扫描，优先使用索引
-                    if (index instanceof edu.sustech.cs307.index.InMemoryOrderedIndex) {
-                        // 对于InMemoryOrderedIndex，使用专门的全表扫描操作符
-                        currentOperator = new InMemoryIndexScanOperator(
-                                (edu.sustech.cs307.index.InMemoryOrderedIndex) index, dbManager);
-                        currentOperator.Begin();
-                        usingIndexScan = true;
-                        Logger.info("Using InMemoryIndexScanOperator for full table scan on table {}", tableName);
-                    } else {
-                        // 对于其他类型的索引，回退到顺序扫描
-                        currentOperator = new SeqScanOperator(tableName, dbManager);
-                        currentOperator.Begin();
-                        usingIndexScan = false;
-                        Logger.info(
-                                "Using SeqScanOperator for full table scan on table {} (B+Tree index not suitable for full scan)",
-                                tableName);
-                    }
+                    // 没有搜索键，进行全表扫描，B+树索引不适合全表扫描，直接使用顺序扫描
+                    currentOperator = new SeqScanOperator(tableName, dbManager);
+                    currentOperator.Begin();
+                    usingIndexScan = false;
+                    Logger.info(
+                            "Using SeqScanOperator for full table scan on table {} (B+Tree index not suitable for full scan)",
+                            tableName);
                 }
             } catch (DBException e) {
                 Logger.warn("Index operation failed for table {} on column {}: {}, falling back to SeqScan",
@@ -107,18 +101,18 @@ public class HybridScanOperator implements PhysicalOperator {
 
         if (searchKey != null && columnName != null) {
             // 创建等值过滤条件
-            net.sf.jsqlparser.expression.operators.relational.EqualsTo equalsTo = new net.sf.jsqlparser.expression.operators.relational.EqualsTo();
-            net.sf.jsqlparser.schema.Column column = new net.sf.jsqlparser.schema.Column(columnName);
+            EqualsTo equalsTo = new EqualsTo();
+            Column column = new Column(columnName);
 
             // 根据搜索键类型创建对应的表达式
             net.sf.jsqlparser.expression.Expression valueExpr;
-            if (searchKey.type == edu.sustech.cs307.value.ValueType.CHAR) {
+            if (searchKey.type == ValueType.CHAR) {
                 valueExpr = new net.sf.jsqlparser.expression.StringValue((String) searchKey.value);
-            } else if (searchKey.type == edu.sustech.cs307.value.ValueType.INTEGER) {
+            } else if (searchKey.type == ValueType.INTEGER) {
                 valueExpr = new net.sf.jsqlparser.expression.LongValue((Long) searchKey.value);
-            } else if (searchKey.type == edu.sustech.cs307.value.ValueType.FLOAT) {
+            } else if (searchKey.type == ValueType.FLOAT) {
                 valueExpr = new net.sf.jsqlparser.expression.DoubleValue((Float) searchKey.value);
-            } else if (searchKey.type == edu.sustech.cs307.value.ValueType.DOUBLE) {
+            } else if (searchKey.type == ValueType.DOUBLE) {
                 valueExpr = new net.sf.jsqlparser.expression.DoubleValue((Double) searchKey.value);
             } else {
                 // 对于不支持的类型，返回未过滤的顺序扫描

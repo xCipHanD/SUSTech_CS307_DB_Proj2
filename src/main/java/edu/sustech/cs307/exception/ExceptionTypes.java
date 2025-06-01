@@ -23,8 +23,9 @@ public enum ExceptionTypes {
     INSERT_COLUMN_TYPE_NOT_MATCH,
     GET_VALUE_FROM_TEMP_TUPLE,
     NOT_SUPPORTED_OPERATION,
-    TYPE_MISMATCH, // Added new ExceptionType for type mismatches
-    INVALID_OPERATION; // Added for operations that are invalid in the current context
+    TYPE_MISMATCH,
+    INVALID_OPERATION,
+    RECORD_NOT_FOUND;
 
     private String error_result;
 
@@ -174,7 +175,9 @@ public enum ExceptionTypes {
     }
 
     public static ExceptionTypes RecordNotFound(String string) {
-        throw new UnsupportedOperationException("Unimplemented method 'RecordNotFound'");
+        RECORD_NOT_FOUND.SetErrorResult(
+                String.format("Record not found: %s", string));
+        return RECORD_NOT_FOUND;
     }
 
 }

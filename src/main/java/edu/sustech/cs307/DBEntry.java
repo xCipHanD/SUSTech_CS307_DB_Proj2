@@ -27,8 +27,6 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
-//TIP To <b>Run</b> code, press <shortcut actionId="Run"/> or
-// click the <icon src="AllIcons.Actions.Execute"/> icon in the gutter.
 public class DBEntry {
     public static final String DB_NAME = "CS307-DB";
     // for now, we use 256 * 512 * 4096 bytes = 512MB as the pool size
@@ -71,9 +69,9 @@ public class DBEntry {
                         serverStarted[0] = true;
                         serverStartLock.notify();
                     }
-                    // Keep the server running
+                    // Keep the server running by waiting on the server channel
                     try {
-                        Thread.currentThread().join();
+                        finalHttpServer.serverChannel.closeFuture().sync();
                     } catch (InterruptedException e) {
                         Logger.info("HTTP server thread interrupted");
                         Thread.currentThread().interrupt();
@@ -121,7 +119,6 @@ public class DBEntry {
 
         String sql = "";
         boolean running = true;
-        // initialize LineReader once to retain buffer across iterations
         LineReader scanner;
         try {
             scanner = LineReaderBuilder.builder()
@@ -166,14 +163,21 @@ public class DBEntry {
                     continue;
                 }
                 try {
+                    long startTime = System.nanoTime();
                     LogicalOperator operator = LogicalPlanner.resolveAndPlan(dbManager, sql);
                     if (operator == null) {
+                        long endTime = System.nanoTime();
+                        double executionTimeMs = (endTime - startTime) / 1_000_000.0;
+                        Logger.info(String.format("Execution completed in %.2f ms", executionTimeMs));
                         continue;
                     }
                     PhysicalOperator physicalOperator = PhysicalPlanner.generateOperator(dbManager, operator);
                     if (physicalOperator == null) {
                         Logger.info("No physical operator generated.");
                         Logger.info(operator);
+                        long endTime = System.nanoTime();
+                        double executionTimeMs = (endTime - startTime) / 1_000_000.0;
+                        Logger.info(String.format("Execution completed in %.2f ms", executionTimeMs));
                         continue;
                     }
                     // Initialize and prepare the operator
@@ -190,6 +194,10 @@ public class DBEntry {
                     }
                     physicalOperator.Close();
                     dbManager.getBufferPool().FlushAllPages("");
+                    long endTime = System.nanoTime();
+                    double executionTimeMs = (endTime - startTime) / 1_000_000.0;
+                    Logger.info(String.format("Execution completed in %.2f ms", executionTimeMs));
+
                 } catch (DBException e) {
                     Logger.error("Execution error: " + e.getMessage());
                     Logger.error("Please check your SQL syntax or database state.");

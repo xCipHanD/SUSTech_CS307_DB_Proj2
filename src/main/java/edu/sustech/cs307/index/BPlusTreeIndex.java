@@ -8,47 +8,29 @@ import org.pmw.tinylog.Logger;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Iterator;
 import java.util.Map;
-import java.util.TreeMap; // Using TreeMap to simulate ordered index behavior for now
+import java.util.AbstractMap;
 
-// Placeholder for a more complete B+ Tree Index implementation
 public class BPlusTreeIndex implements Index {
     private BPlusTreeNode root;
-    private int degree;
-    private String tableName;
-    private String columnName;
-    private Map<Value, ArrayList<RID>> map; // Temporary stand-in for B+Tree structure
+    private final int degree;
+    private final String tableName;
+    private final String columnName;
 
     public BPlusTreeIndex(String tableName, String columnName, int degree) {
-        this.root = new BPlusTreeNode(true, degree); // Pass degree to root node
         this.degree = degree > 0 ? degree : BPlusTreeNode.DEFAULT_DEGREE;
         this.tableName = tableName;
         this.columnName = columnName;
-        this.map = new TreeMap<>((v1, v2) -> {
-            try {
-                return ValueComparer.compare(v1, v2);
-            } catch (DBException e) {
-                // Wrap the checked DBException in an unchecked exception
-                throw new RuntimeException("Comparison failed in BPlusTreeIndex TreeMap: " + e.getMessage(), e);
-            }
-        });
+        this.root = null; // Start with empty tree
     }
 
     public BPlusTreeNode getRoot() {
         return root;
     }
 
-    /**
-     * Searches for RIDs associated with a given key.
-     * This is a simplified search that directly uses the TreeMap.
-     * A full B+ Tree search would traverse from the root down to a leaf.
-     * 
-     * @param key The key to search for.
-     * @return A list of RIDs, or an empty list if the key is not found.
-     */
+    @Override
     public List<RID> search(Value key) throws DBException {
-        // Simulate B+ Tree search using the TreeMap
-        // return map.getOrDefault(key, new ArrayList<>()); // Old TreeMap based search
         if (root == null) {
             return new ArrayList<>();
         }
@@ -58,170 +40,215 @@ public class BPlusTreeIndex implements Index {
     private List<RID> searchRecursive(BPlusTreeNode node, Value key) throws DBException {
         if (node.isLeaf) {
             List<RID> resultRIDs = new ArrayList<>();
-            int keyIndex = node.findKeyIndex(key); // Uses binary search
+            int keyIndex = node.findKeyIndex(key);
             if (keyIndex >= 0) {
-                // Key found. Assuming one RID per key entry for now.
-                // If multiple RIDs per key value are possible and stored as a list at
-                // node.rids.get(keyIndex),
-                // this part would need to handle that.
+                // Found exact match
                 resultRIDs.add(node.rids.get(keyIndex));
-                // Add logic here if duplicate keys (identical Value objects) can map to
-                // distinct RIDs
-                // and are stored sequentially in the leaf. E.g., scan left and right from
-                // keyIndex.
+
+                // Check for duplicate keys (same value, different RIDs)
+                // Scan left for duplicates
+                for (int i = keyIndex - 1; i >= 0; i--) {
+                    if (ValueComparer.compare(node.keys.get(i), key) == 0) {
+                        resultRIDs.add(0, node.rids.get(i)); // Add at beginning to maintain order
+                    } else {
+                        break;
+                    }
+                }
+
+                // Scan right for duplicates
+                for (int i = keyIndex + 1; i < node.keys.size(); i++) {
+                    if (ValueComparer.compare(node.keys.get(i), key) == 0) {
+                        resultRIDs.add(node.rids.get(i));
+                    } else {
+                        break;
+                    }
+                }
             }
             return resultRIDs;
         } else {
             // Internal node: find the child to traverse
             int childPointerIndex = node.findChildPointerIndex(key);
             if (childPointerIndex >= node.children.size() || childPointerIndex < 0) {
-                // Should not happen in a well-formed tree if key is within tree's range
                 return new ArrayList<>();
             }
             return searchRecursive(node.children.get(childPointerIndex), key);
         }
     }
 
-    /**
-     * Searches for RIDs within a given key range.
-     * This is a simplified search that directly uses the TreeMap's subMap
-     * functionality.
-     * 
-     * @param startKey The start of the range (inclusive).
-     * @param endKey   The end of the range (inclusive).
-     * @return A list of RIDs.
-     */
-    public List<RID> searchRange(Value startKey, Value endKey) throws DBException {
-        // return searchRangeRecursive(root, startKey, endKey, true, true); // Old call
-        return searchRangeIterative(startKey, endKey, true, true); // Using new iterative method
-    }
-
-    // Insert and Delete methods would manipulate the B+ Tree structure (root,
-    // nodes)
-    // These are complex and involve splitting/merging nodes.
-
     @Override
     public void insert(Value key, RID rid) throws DBException {
-        // Simplified insert for TreeMap simulation - needs to be replaced with B+ Tree
-        // logic
-        // map.computeIfAbsent(key, k -> new ArrayList<>()).add(rid);
         if (root == null) {
             root = new BPlusTreeNode(true, degree);
+            root.insertIntoLeaf(key, rid);
+            return;
         }
-        insertRecursive(root, key, rid, null); // Parent is initially null
+
+        InsertResult result = insertRecursive(root, key, rid);
+
+        // If root was split, create new root
+        if (result.newChild != null) {
+            BPlusTreeNode newRoot = new BPlusTreeNode(false, degree);
+            newRoot.keys.add(result.newKey);
+            newRoot.children.add(root);
+            newRoot.children.add(result.newChild);
+            this.root = newRoot;
+        }
     }
 
-    private void insertRecursive(BPlusTreeNode node, Value key, RID rid, BPlusTreeNode parent) throws DBException {
+    // Helper class to handle split results
+    private static class InsertResult {
+        Value newKey;
+        BPlusTreeNode newChild;
+
+        InsertResult() {
+            this.newKey = null;
+            this.newChild = null;
+        }
+
+        InsertResult(Value newKey, BPlusTreeNode newChild) {
+            this.newKey = newKey;
+            this.newChild = newChild;
+        }
+    }
+
+    private InsertResult insertRecursive(BPlusTreeNode node, Value key, RID rid) throws DBException {
         if (node.isLeaf) {
             if (!node.isFull()) {
                 node.insertIntoLeaf(key, rid);
+                return new InsertResult(); // No split occurred
             } else {
-                // Handle leaf node split
-                BPlusTreeNode newLeaf = splitLeafNode(node, key, rid);
-                Value newKeyToParent = newLeaf.keys.get(0);
-
-                if (parent == null) {
-                    // Root was split, create new root
-                    BPlusTreeNode newRoot = new BPlusTreeNode(false, degree);
-                    newRoot.keys.add(newKeyToParent);
-                    newRoot.children.add(node);
-                    newRoot.children.add(newLeaf);
-                    this.root = newRoot;
-                } else {
-                    // Propagate key to parent
-                    // This part needs to handle parent splitting as well, if parent is full
-                    // For now, assuming parent has space or we need another method for parent
-                    // insertion/split
-                    insertIntoParent(parent, newKeyToParent, node, newLeaf);
-                }
+                // Split leaf node
+                return splitLeafNode(node, key, rid);
             }
         } else {
             // Internal node: find child to traverse
             int childIndex = findChildIndexForKey(node, key);
+            if (childIndex >= node.children.size()) {
+                childIndex = node.children.size() - 1; // Use last child
+            }
+
             BPlusTreeNode child = node.children.get(childIndex);
-            insertRecursive(child, key, rid, node); // Pass current node as parent
+            InsertResult childResult = insertRecursive(child, key, rid);
+
+            if (childResult.newChild == null) {
+                return new InsertResult(); // No split propagated up
+            }
+
+            // Child was split, need to insert new key into this internal node
+            if (!node.isFull()) {
+                insertIntoInternalNode(node, childResult.newKey, childIndex, childResult.newChild);
+                return new InsertResult(); // No split at this level
+            } else {
+                // This internal node is also full, need to split it
+                return splitInternalNode(node, childResult.newKey, childIndex, childResult.newChild);
+            }
         }
     }
 
-    // Placeholder for splitting a leaf node. Returns the new sibling node.
-    private BPlusTreeNode splitLeafNode(BPlusTreeNode leaf, Value newKey, RID newRid) throws DBException {
-        // Create a new leaf node
+    private InsertResult splitLeafNode(BPlusTreeNode leaf, Value newKey, RID newRid) throws DBException {
         BPlusTreeNode newLeaf = new BPlusTreeNode(true, degree);
 
-        // Temporary list to hold all keys and RIDs before splitting
-        List<Value> tempKeys = new ArrayList<>(leaf.keys);
-        List<RID> tempRids = new ArrayList<>(leaf.rids);
+        // Collect all keys and RIDs
+        List<Value> allKeys = new ArrayList<>(leaf.keys);
+        List<RID> allRids = new ArrayList<>(leaf.rids);
 
-        // Find position for newKey and newRid
-        int i = 0;
-        while (i < tempKeys.size() && ValueComparer.compare(tempKeys.get(i), newKey) < 0) {
-            i++;
+        // Find insertion position
+        int insertPos = 0;
+        while (insertPos < allKeys.size() && ValueComparer.compare(allKeys.get(insertPos), newKey) < 0) {
+            insertPos++;
         }
-        tempKeys.add(i, newKey);
-        tempRids.add(i, newRid);
+        allKeys.add(insertPos, newKey);
+        allRids.add(insertPos, newRid);
 
-        // Clear original leaf and redistribute
+        // Split point - first half stays in original, second half goes to new
+        int splitPoint = allKeys.size() / 2;
+
+        // Clear original leaf and fill with first half
         leaf.keys.clear();
         leaf.rids.clear();
-
-        int midPoint = (degree) / 2; // Split point, keys up to midPoint-1 stay in old leaf
-
-        for (int j = 0; j < midPoint; j++) {
-            leaf.keys.add(tempKeys.get(j));
-            leaf.rids.add(tempRids.get(j));
+        for (int i = 0; i < splitPoint; i++) {
+            leaf.keys.add(allKeys.get(i));
+            leaf.rids.add(allRids.get(i));
         }
 
-        for (int j = midPoint; j < tempKeys.size(); j++) {
-            newLeaf.keys.add(tempKeys.get(j));
-            newLeaf.rids.add(tempRids.get(j));
+        // Fill new leaf with second half
+        for (int i = splitPoint; i < allKeys.size(); i++) {
+            newLeaf.keys.add(allKeys.get(i));
+            newLeaf.rids.add(allRids.get(i));
         }
 
-        // Link leaf nodes
+        // Update leaf pointers
         newLeaf.nextLeaf = leaf.nextLeaf;
         leaf.nextLeaf = newLeaf;
 
-        return newLeaf;
+        // The key to propagate up is the first key of the new leaf
+        Value keyToPropagate = newLeaf.keys.get(0);
+
+        return new InsertResult(keyToPropagate, newLeaf);
     }
 
-    // Placeholder for inserting into a parent node after a child split.
-    // This needs to handle splitting the parent if it's full.
-    private void insertIntoParent(BPlusTreeNode parent, Value key, BPlusTreeNode leftChild, BPlusTreeNode rightChild)
+    private void insertIntoInternalNode(BPlusTreeNode node, Value key, int childIndex, BPlusTreeNode newChild)
             throws DBException {
-        if (!parent.isFull()) {
-            // Find position to insert key and new child (rightChild)
-            int i = 0;
-            while (i < parent.keys.size() && ValueComparer.compare(parent.keys.get(i), key) < 0) {
-                i++;
-            }
-            parent.keys.add(i, key);
-            parent.children.add(i + 1, rightChild); // rightChild is to the right of the new key
-            // leftChild should already be in parent.children, or needs to be set if it was
-            // the one that split
-            // This logic might need refinement based on how children are managed during
-            // splits.
-        } else {
-            // Parent is full, split parent
-            // This is a complex operation: create new internal node, redistribute keys and
-            // children,
-            // and then recursively insert the middle key from this split into its parent.
-            // For now, this is a TODO.
-            throw new DBException(edu.sustech.cs307.exception.ExceptionTypes
-                    .InvalidOperation("Parent splitting not yet implemented."));
+        // Find insertion position for the key
+        int keyPos = 0;
+        while (keyPos < node.keys.size() && ValueComparer.compare(node.keys.get(keyPos), key) < 0) {
+            keyPos++;
         }
+
+        node.keys.add(keyPos, key);
+        // New child goes to the right of the inserted key
+        node.children.add(keyPos + 1, newChild);
     }
 
-    // Helper to find which child to traverse to in an internal node for a given
-    // key.
+    private InsertResult splitInternalNode(BPlusTreeNode node, Value newKey, int childIndex, BPlusTreeNode newChild)
+            throws DBException {
+        BPlusTreeNode newInternal = new BPlusTreeNode(false, degree);
+
+        // Collect all keys and children
+        List<Value> allKeys = new ArrayList<>(node.keys);
+        List<BPlusTreeNode> allChildren = new ArrayList<>(node.children);
+
+        // Find insertion position for new key
+        int keyPos = 0;
+        while (keyPos < allKeys.size() && ValueComparer.compare(allKeys.get(keyPos), newKey) < 0) {
+            keyPos++;
+        }
+        allKeys.add(keyPos, newKey);
+        allChildren.add(keyPos + 1, newChild);
+
+        // Split point
+        int splitPoint = allKeys.size() / 2;
+        Value middleKey = allKeys.get(splitPoint);
+
+        // Clear original node and fill with first half
+        node.keys.clear();
+        node.children.clear();
+        for (int i = 0; i < splitPoint; i++) {
+            node.keys.add(allKeys.get(i));
+        }
+        for (int i = 0; i <= splitPoint; i++) {
+            node.children.add(allChildren.get(i));
+        }
+
+        // Fill new internal node with second half
+        for (int i = splitPoint + 1; i < allKeys.size(); i++) {
+            newInternal.keys.add(allKeys.get(i));
+        }
+        for (int i = splitPoint + 1; i < allChildren.size(); i++) {
+            newInternal.children.add(allChildren.get(i));
+        }
+
+        return new InsertResult(middleKey, newInternal);
+    }
+
     private int findChildIndexForKey(BPlusTreeNode node, Value key) throws DBException {
         if (node.isLeaf) {
             throw new IllegalStateException("Cannot find child index in a leaf node.");
         }
         int i = 0;
-        // Find the first key greater than or equal to the search key
-        while (i < node.keys.size() && ValueComparer.compare(node.keys.get(i), key) < 0) {
+        while (i < node.keys.size() && ValueComparer.compare(node.keys.get(i), key) <= 0) {
             i++;
         }
-        // The child pointer is at this index i
         return i;
     }
 
@@ -231,32 +258,128 @@ public class BPlusTreeIndex implements Index {
             Logger.warn("Attempting to delete from empty B+ Tree");
             return;
         }
-        deleteRecursive(root, key, rid, null);
+
+        boolean deleted = deleteRecursive(root, key, rid);
+
+        // If root is internal and has no keys, make its only child the new root
+        if (!root.isLeaf && root.keys.isEmpty() && !root.children.isEmpty()) {
+            root = root.children.get(0);
+        }
+
+        // If root is leaf and empty, set to null
+        if (root.isLeaf && root.keys.isEmpty()) {
+            root = null;
+        }
+
+        if (!deleted) {
+            Logger.warn("Key {} with RID {} not found for deletion in B+ Tree", key, rid);
+        }
     }
 
-    private void deleteRecursive(BPlusTreeNode node, Value key, RID rid, BPlusTreeNode parent) throws DBException {
+    private boolean deleteRecursive(BPlusTreeNode node, Value key, RID rid) throws DBException {
         if (node.isLeaf) {
             // Find and remove the key-RID pair from leaf
-            int keyIndex = node.findKeyIndex(key);
-            if (keyIndex >= 0 && keyIndex < node.rids.size() && node.rids.get(keyIndex).equals(rid)) {
-                node.keys.remove(keyIndex);
-                node.rids.remove(keyIndex);
-
-                // Check for underflow (simplified - in a full implementation,
-                // we'd handle merging/redistribution with siblings)
-                if (node.keys.isEmpty() && parent == null) {
-                    // Root is empty
-                    root = null;
+            for (int i = 0; i < node.keys.size(); i++) {
+                if (ValueComparer.compare(node.keys.get(i), key) == 0 &&
+                        node.rids.get(i).equals(rid)) {
+                    node.keys.remove(i);
+                    node.rids.remove(i);
+                    return true;
                 }
-            } else {
-                Logger.warn("Key " + key + " with RID " + rid + " not found for deletion in B+ Tree");
             }
+            return false;
         } else {
             // Internal node: find child to traverse
             int childIndex = node.findChildPointerIndex(key);
-            if (childIndex >= 0 && childIndex < node.children.size()) {
-                deleteRecursive(node.children.get(childIndex), key, rid, node);
+            if (childIndex >= node.children.size()) {
+                childIndex = node.children.size() - 1;
             }
+
+            return deleteRecursive(node.children.get(childIndex), key, rid);
+        }
+    }
+
+    @Override
+    public List<RID> searchRange(Value startKey, Value endKey, boolean startInclusive, boolean endInclusive)
+            throws DBException {
+        if (root == null) {
+            return new ArrayList<>();
+        }
+        return searchRangeIterative(startKey, endKey, startInclusive, endInclusive);
+    }
+
+    private List<RID> searchRangeIterative(Value startKey, Value endKey, boolean startInclusive, boolean endInclusive)
+            throws DBException {
+        List<RID> resultRIDs = new ArrayList<>();
+        if (root == null)
+            return resultRIDs;
+
+        // Find the starting leaf node
+        BPlusTreeNode currentLeaf = findLeafNodeForKey(root, startKey);
+        if (currentLeaf == null)
+            return resultRIDs;
+
+        // Scan leaf nodes
+        while (currentLeaf != null) {
+            for (int i = 0; i < currentLeaf.keys.size(); i++) {
+                Value currentKey = currentLeaf.keys.get(i);
+                RID currentRid = currentLeaf.rids.get(i);
+
+                // Check if we've gone past the end key
+                int cmpWithEndKey = ValueComparer.compare(currentKey, endKey);
+                if (cmpWithEndKey > 0 || (cmpWithEndKey == 0 && !endInclusive)) {
+                    return resultRIDs;
+                }
+
+                // Check if we're within the start key boundary
+                int cmpWithStartKey = ValueComparer.compare(currentKey, startKey);
+                if (cmpWithStartKey > 0 || (cmpWithStartKey == 0 && startInclusive)) {
+                    resultRIDs.add(currentRid);
+                }
+            }
+            currentLeaf = currentLeaf.nextLeaf;
+        }
+        return resultRIDs;
+    }
+
+    private BPlusTreeNode findLeafNodeForKey(BPlusTreeNode node, Value key) throws DBException {
+        if (node == null)
+            return null;
+
+        BPlusTreeNode current = node;
+        while (!current.isLeaf) {
+            int childIndex = current.findChildPointerIndex(key);
+            if (childIndex >= current.children.size()) {
+                childIndex = current.children.size() - 1;
+            }
+            current = current.children.get(childIndex);
+        }
+        return current;
+    }
+
+    @Override
+    public Iterator<Map.Entry<Value, RID>> LessThan(Value value, boolean isEqual) {
+        return new BPlusTreeIterator(this, null, value, true, !isEqual);
+    }
+
+    @Override
+    public Iterator<Map.Entry<Value, RID>> MoreThan(Value value, boolean isEqual) {
+        return new BPlusTreeIterator(this, value, null, !isEqual, true);
+    }
+
+    @Override
+    public Iterator<Map.Entry<Value, RID>> Range(Value low, Value high, boolean leftEqual, boolean rightEqual) {
+        return new BPlusTreeIterator(this, low, high, leftEqual, rightEqual);
+    }
+
+    @Override
+    public RID EqualTo(Value value) {
+        try {
+            List<RID> results = search(value);
+            return results.isEmpty() ? null : results.get(0);
+        } catch (DBException e) {
+            Logger.error("Error in EqualTo search: " + e.getMessage());
+            return null;
         }
     }
 
@@ -270,113 +393,285 @@ public class BPlusTreeIndex implements Index {
         return columnName;
     }
 
-    // Helper method to get the underlying map for IndexScanOperator (temporary)
-    public Map<Value, ArrayList<RID>> getMap() {
-        return this.map;
-    }
+    /**
+     * Iterator implementation for B+ Tree traversal
+     */
+    private static class BPlusTreeIterator implements Iterator<Map.Entry<Value, RID>> {
+        private final BPlusTreeIndex index;
+        private final Value startKey;
+        private final Value endKey;
+        private final boolean startInclusive;
+        private final boolean endInclusive;
 
-    // Implementing missing methods from Index interface with temporary/placeholder
-    // logic
+        private BPlusTreeNode currentLeaf;
+        private int currentIndex;
+        private Map.Entry<Value, RID> nextEntry;
+        private boolean hasNextCached;
 
-    @Override
-    public List<RID> searchRange(Value startKey, Value endKey, boolean startInclusive, boolean endInclusive)
-            throws DBException {
-        if (root == null) {
-            return new ArrayList<>();
+        public BPlusTreeIterator(BPlusTreeIndex index, Value startKey, Value endKey,
+                boolean startInclusive, boolean endInclusive) {
+            this.index = index;
+            this.startKey = startKey;
+            this.endKey = endKey;
+            this.startInclusive = startInclusive;
+            this.endInclusive = endInclusive;
+
+            this.currentIndex = 0;
+            this.hasNextCached = false;
+
+            try {
+                initializeIterator();
+            } catch (DBException e) {
+                Logger.error("Error initializing B+ Tree iterator: " + e.getMessage());
+                this.currentLeaf = null;
+            }
         }
-        // return searchRangeRecursive(root, startKey, endKey, startInclusive,
-        // endInclusive); // Old recursive call
-        return searchRangeIterative(startKey, endKey, startInclusive, endInclusive); // Using new iterative method
-    }
 
-    // Iterative range search using leaf node traversal
-    private List<RID> searchRangeIterative(Value startKey, Value endKey, boolean startInclusive, boolean endInclusive)
-            throws DBException {
-        List<RID> resultRIDs = new ArrayList<>();
-        if (root == null)
-            return resultRIDs;
+        private void initializeIterator() throws DBException {
+            if (index.root == null) {
+                currentLeaf = null;
+                return;
+            }
 
-        // 1. Find the starting leaf node
-        BPlusTreeNode currentLeaf = findLeafNodeForKey(root, startKey);
+            if (startKey == null) {
+                // Start from the leftmost leaf
+                currentLeaf = findLeftmostLeaf(index.root);
+                currentIndex = 0;
+            } else {
+                // Find the leaf that should contain the start key
+                currentLeaf = index.findLeafNodeForKey(index.root, startKey);
+                if (currentLeaf != null) {
+                    // Find the first position >= startKey
+                    currentIndex = 0;
+                    while (currentIndex < currentLeaf.keys.size()) {
+                        int cmp = ValueComparer.compare(currentLeaf.keys.get(currentIndex), startKey);
+                        if (cmp > 0 || (cmp == 0 && startInclusive)) {
+                            break;
+                        }
+                        currentIndex++;
+                    }
 
-        // 2. Scan leaf nodes
-        while (currentLeaf != null) {
-            for (int i = 0; i < currentLeaf.keys.size(); i++) {
-                Value currentKey = currentLeaf.keys.get(i);
-                RID currentRid = currentLeaf.rids.get(i);
-
-                // Check if currentKey is past endKey
-                int cmpWithEndKey = ValueComparer.compare(currentKey, endKey);
-                if (cmpWithEndKey > 0 || (cmpWithEndKey == 0 && !endInclusive)) {
-                    return resultRIDs; // All subsequent keys will also be too large
-                }
-
-                // Check if currentKey is within startKey boundary
-                int cmpWithStartKey = ValueComparer.compare(currentKey, startKey);
-                if (cmpWithStartKey > 0 || (cmpWithStartKey == 0 && startInclusive)) {
-                    resultRIDs.add(currentRid);
+                    // If we've gone past all keys in this leaf, move to next leaf
+                    if (currentIndex >= currentLeaf.keys.size()) {
+                        moveToNextLeaf();
+                    }
                 }
             }
-            currentLeaf = currentLeaf.nextLeaf; // Move to the next leaf
         }
-        return resultRIDs;
-    }
 
-    // Helper to find the leaf node that should contain a given key (or where it
-    // would be inserted)
-    private BPlusTreeNode findLeafNodeForKey(BPlusTreeNode node, Value key) throws DBException {
-        if (node == null)
+        private BPlusTreeNode findLeftmostLeaf(BPlusTreeNode node) {
+            while (!node.isLeaf && !node.children.isEmpty()) {
+                node = node.children.get(0);
+            }
+            return node.isLeaf ? node : null;
+        }
+
+        private void moveToNextLeaf() {
+            if (currentLeaf != null) {
+                currentLeaf = currentLeaf.nextLeaf;
+                currentIndex = 0;
+            }
+        }
+
+        @Override
+        public boolean hasNext() {
+            if (hasNextCached) {
+                return nextEntry != null;
+            }
+
+            nextEntry = computeNext();
+            hasNextCached = true;
+            return nextEntry != null;
+        }
+
+        private Map.Entry<Value, RID> computeNext() {
+            while (currentLeaf != null) {
+                // Check if we have more entries in current leaf
+                if (currentIndex < currentLeaf.keys.size()) {
+                    Value key = currentLeaf.keys.get(currentIndex);
+                    RID rid = currentLeaf.rids.get(currentIndex);
+
+                    // Check if we've exceeded the end boundary
+                    if (endKey != null) {
+                        try {
+                            int cmp = ValueComparer.compare(key, endKey);
+                            if (cmp > 0 || (cmp == 0 && !endInclusive)) {
+                                return null; // End of range
+                            }
+                        } catch (DBException e) {
+                            Logger.error("Error comparing keys in iterator: " + e.getMessage());
+                            return null;
+                        }
+                    }
+
+                    currentIndex++;
+                    return new AbstractMap.SimpleEntry<>(key, rid);
+                } else {
+                    // Move to next leaf
+                    moveToNextLeaf();
+                }
+            }
             return null;
-        BPlusTreeNode current = node;
-        while (!current.isLeaf) {
-            int childIndex = current.findChildPointerIndex(key);
-            if (childIndex >= current.children.size() || childIndex < 0) {
-                // This indicates an issue or key out of tree bounds, return null or handle
-                // error
-                // For range scan, if startKey is larger than all keys, it might point beyond
-                // last child.
-                // If findChildPointerIndex returns keys.size(), it means rightmost child.
-                // If it returns an invalid index due to an error, that's a problem.
-                // For now, assume valid index or that the last child is chosen if key is very
-                // large.
-                return null; // Or handle as an error / edge case
-            }
-            current = current.children.get(childIndex);
         }
-        return current;
+
+        @Override
+        public Map.Entry<Value, RID> next() {
+            if (!hasNext()) {
+                throw new java.util.NoSuchElementException();
+            }
+
+            Map.Entry<Value, RID> result = nextEntry;
+            nextEntry = null;
+            hasNextCached = false;
+            return result;
+        }
     }
 
-    // private List<RID> searchRangeRecursive(BPlusTreeNode node, Value startKey,
-    // Value endKey, boolean startInclusive, boolean endInclusive) throws
-    // DBException { ... }
-    // Commenting out the old recursive range search as it was complex and less
-    // efficient than iterative scan.
-
-    @Override
-    public java.util.Iterator<java.util.Map.Entry<Value, RID>> LessThan(Value value, boolean isEqual) {
-        // Placeholder implementation - requires actual B+ Tree logic
-        throw new UnsupportedOperationException("LessThan not implemented yet.");
+    /**
+     * Debug method to print tree structure
+     */
+    public void printTree() {
+        if (root == null) {
+            System.out.println("Empty tree");
+            return;
+        }
+        printNode(root, 0);
     }
 
-    @Override
-    public java.util.Iterator<java.util.Map.Entry<Value, RID>> MoreThan(Value value, boolean isEqual) {
-        // Placeholder implementation - requires actual B+ Tree logic
-        throw new UnsupportedOperationException("MoreThan not implemented yet.");
+    private void printNode(BPlusTreeNode node, int level) {
+        String indent = "  ".repeat(level);
+        System.out.print(indent + (node.isLeaf ? "Leaf: " : "Internal: "));
+
+        for (int i = 0; i < node.keys.size(); i++) {
+            System.out.print(node.keys.get(i));
+            if (node.isLeaf && i < node.rids.size()) {
+                System.out.print("(" + node.rids.get(i) + ")");
+            }
+            if (i < node.keys.size() - 1) {
+                System.out.print(", ");
+            }
+        }
+        System.out.println();
+
+        if (!node.isLeaf && node.children != null) {
+            for (BPlusTreeNode child : node.children) {
+                printNode(child, level + 1);
+            }
+        }
     }
 
-    @Override
-    public java.util.Iterator<java.util.Map.Entry<Value, RID>> Range(Value low, Value high, boolean leftEqual,
-            boolean rightEqual) {
-        // Placeholder implementation - requires actual B+ Tree logic
-        throw new UnsupportedOperationException("Range not implemented yet.");
+    /**
+     * Validate tree structure integrity
+     */
+    public boolean validateTree() {
+        if (root == null)
+            return true;
+
+        try {
+            return validateNode(root, null, null) && validateLeafLinks();
+        } catch (DBException e) {
+            Logger.error("Error validating tree: " + e.getMessage());
+            return false;
+        }
     }
 
-    @Override
-    public RID EqualTo(Value value) {
-        // Placeholder implementation - requires actual B+ Tree logic
-        // This method signature (returning single RID) might conflict with search(Value
-        // key) returning List<RID>.
-        // Consider unifying or clarifying their distinct purposes.
-        throw new UnsupportedOperationException("EqualTo not implemented yet.");
+    private boolean validateNode(BPlusTreeNode node, Value minKey, Value maxKey) throws DBException {
+        // Check key count constraints
+        if (node != root && node.keys.size() < (degree - 1) / 2) {
+            Logger.error("Node has too few keys: " + node.keys.size());
+            return false;
+        }
+
+        if (node.keys.size() > degree - 1) {
+            Logger.error("Node has too many keys: " + node.keys.size());
+            return false;
+        }
+
+        // Check key ordering within node
+        for (int i = 1; i < node.keys.size(); i++) {
+            if (ValueComparer.compare(node.keys.get(i - 1), node.keys.get(i)) >= 0) {
+                Logger.error("Keys not in ascending order within node");
+                return false;
+            }
+        }
+
+        // Check boundary constraints
+        if (minKey != null && !node.keys.isEmpty() &&
+                ValueComparer.compare(node.keys.get(0), minKey) < 0) {
+            Logger.error("Node violates minimum key constraint");
+            return false;
+        }
+
+        if (maxKey != null && !node.keys.isEmpty() &&
+                ValueComparer.compare(node.keys.get(node.keys.size() - 1), maxKey) > 0) {
+            Logger.error("Node violates maximum key constraint");
+            return false;
+        }
+
+        // Recursively validate children
+        if (!node.isLeaf) {
+            if (node.children.size() != node.keys.size() + 1) {
+                Logger.error("Internal node has incorrect number of children");
+                return false;
+            }
+
+            for (int i = 0; i < node.children.size(); i++) {
+                Value childMinKey = (i == 0) ? minKey : node.keys.get(i - 1);
+                Value childMaxKey = (i == node.keys.size()) ? maxKey : node.keys.get(i);
+
+                if (!validateNode(node.children.get(i), childMinKey, childMaxKey)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private boolean validateLeafLinks() {
+        if (root == null)
+            return true;
+
+        // Find leftmost leaf
+        BPlusTreeNode leftmost = findLeftmostLeaf(root);
+        if (leftmost == null)
+            return true;
+
+        // Traverse all leaves and check ordering
+        BPlusTreeNode current = leftmost;
+        Value lastKey = null;
+
+        while (current != null) {
+            if (!current.isLeaf) {
+                Logger.error("Non-leaf node found in leaf chain");
+                return false;
+            }
+
+            for (Value key : current.keys) {
+                if (lastKey != null) {
+                    try {
+                        if (ValueComparer.compare(lastKey, key) > 0) {
+                            Logger.error("Keys not in order across leaf nodes");
+                            return false;
+                        }
+                    } catch (DBException e) {
+                        Logger.error("Error comparing keys in leaf validation: " + e.getMessage());
+                        return false;
+                    }
+                }
+                lastKey = key;
+            }
+
+            current = current.nextLeaf;
+        }
+
+        return true;
+    }
+
+    private BPlusTreeNode findLeftmostLeaf(BPlusTreeNode node) {
+        while (!node.isLeaf && !node.children.isEmpty()) {
+            node = node.children.get(0);
+        }
+        return node.isLeaf ? node : null;
     }
 }

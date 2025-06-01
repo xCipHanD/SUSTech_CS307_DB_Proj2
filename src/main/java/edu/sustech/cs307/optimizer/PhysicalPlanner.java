@@ -10,8 +10,6 @@ import edu.sustech.cs307.value.ValueType;
 import edu.sustech.cs307.meta.ColumnMeta;
 import edu.sustech.cs307.meta.TableMeta;
 import edu.sustech.cs307.index.Index; // Added import for Index
-import edu.sustech.cs307.index.InMemoryOrderedIndex; // Added
-import java.io.File; // Added
 
 import net.sf.jsqlparser.expression.DoubleValue;
 import net.sf.jsqlparser.expression.Expression;
@@ -86,40 +84,17 @@ public class PhysicalPlanner {
 
                 if (index == null && tableMeta.getIndexes().containsKey(firstIndexedColumn)) {
                     // 尝试创建B+树索引
-                    try {
-                        index = dbManager.getIndexManager().createIndex(tableName, firstIndexedColumn);
-                        Logger.info("Created new B+Tree index for full table scan on {}.{}", tableName,
-                                firstIndexedColumn);
-                    } catch (DBException e) {
-                        Logger.warn("Failed to create B+Tree index for {}.{}: {}, trying InMemoryOrderedIndex",
-                                tableName, firstIndexedColumn, e.getMessage());
-
-                        // B+树索引创建失败，回退到InMemoryOrderedIndex
-                        String dbName = "CS307-DB";
-                        if (dbManager.getDiskManager() != null && dbManager.getDiskManager().getDbName() != null) {
-                            dbName = dbManager.getDiskManager().getDbName();
-                        }
-
-                        String indexPersistPath = dbName + File.separator + "indexes" + File.separator + tableName
-                                + File.separator + firstIndexedColumn + ".json";
-
-                        index = new InMemoryOrderedIndex(indexPersistPath, tableName, firstIndexedColumn);
-                        Logger.info("Using InMemoryOrderedIndex for full table scan on {}.{}", tableName,
-                                firstIndexedColumn);
-                    }
+                    index = dbManager.getIndexManager().createIndex(tableName, firstIndexedColumn);
+                    Logger.info("Created new B+Tree index for full table scan on {}.{}", tableName,
+                            firstIndexedColumn);
                 }
 
                 // 如果成功获得索引，使用索引进行全表扫描
                 if (index != null) {
-                    if (index instanceof InMemoryOrderedIndex) {
-                        Logger.info("Using InMemoryIndexScanOperator for full table scan on table {}", tableName);
-                        return new InMemoryIndexScanOperator((InMemoryOrderedIndex) index, dbManager);
-                    } else {
-                        // 对于B+树索引，使用HybridScanOperator，但不指定搜索键（全表扫描）
-                        Logger.info("Using HybridScanOperator for full table scan on table {} with index on column {}",
-                                tableName, firstIndexedColumn);
-                        return new HybridScanOperator(tableName, firstIndexedColumn, null, dbManager, index);
-                    }
+                    // 使用HybridScanOperator，但不指定搜索键（全表扫描）
+                    Logger.info("Using HybridScanOperator for full table scan on table {} with index on column {}",
+                            tableName, firstIndexedColumn);
+                    return new HybridScanOperator(tableName, firstIndexedColumn, null, dbManager, index);
                 }
             } catch (DBException e) {
                 Logger.warn("Failed to use index for table scan on {}: {}, falling back to SeqScan",
@@ -170,28 +145,9 @@ public class PhysicalPlanner {
                     // 如果IndexManager中没有，检查元数据中是否定义了索引
                     if (index == null && tableMeta.getIndexes() != null
                             && tableMeta.getIndexes().containsKey(columnName)) {
-                        // 尝试创建或加载索引
-                        try {
-                            // 首先尝试创建B+树索引
-                            index = dbManager.getIndexManager().createIndex(tableName, columnName);
-                            Logger.info("Created new B+Tree index for {}.{}", tableName, columnName);
-                        } catch (DBException e) {
-                            Logger.warn("Failed to create B+Tree index for {}.{}: {}, trying InMemoryOrderedIndex",
-                                    tableName, columnName, e.getMessage());
-
-                            // B+树索引创建失败，回退到InMemoryOrderedIndex
-                            String dbName = "CS307-DB"; // Fallback, ideally from dbManager
-                            if (dbManager.getDiskManager() != null && dbManager.getDiskManager().getDbName() != null) {
-                                dbName = dbManager.getDiskManager().getDbName();
-                            }
-
-                            String indexPersistPath = dbName + File.separator + "indexes" + File.separator + tableName
-                                    + File.separator + columnName + ".json";
-
-                            index = new InMemoryOrderedIndex(indexPersistPath, tableName, columnName);
-                            Logger.info("Using InMemoryOrderedIndex for {}.{} with path {}", tableName, columnName,
-                                    indexPersistPath);
-                        }
+                        // 尝试创建B+树索引
+                        index = dbManager.getIndexManager().createIndex(tableName, columnName);
+                        Logger.info("Created new B+Tree index for {}.{}", tableName, columnName);
                     }
 
                     // 使用混合扫描器，它会智能地选择索引扫描或顺序扫描

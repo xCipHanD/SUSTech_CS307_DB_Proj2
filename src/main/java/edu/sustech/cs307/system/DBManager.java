@@ -12,13 +12,13 @@ import org.pmw.tinylog.Logger;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.HashMap; // 添加HashMap导入
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 public class DBManager {
     private final MetaManager metaManager;
-    /* --- --- --- */
     private final DiskManager diskManager;
     private final BufferPool bufferPool;
     private final RecordManager recordManager;
@@ -211,5 +211,39 @@ public class DBManager {
         this.bufferPool.FlushAllPages("");
         DiskManager.dump_disk_manager_meta(this.diskManager);
         this.metaManager.saveToJson();
+    }
+
+    /**
+     * 获取数据库中所有表的名称列表（用于HTTP API）
+     * 
+     * @return 包含所有表名的列表
+     */
+    public List<String> getTableNamesList() {
+        return new ArrayList<>(metaManager.getTableNames());
+    }
+
+    /**
+     * 获取指定表的列信息（用于HTTP API）
+     * 
+     * @param table_name 表名
+     * @return 包含列信息的列表，每个元素是包含列名和类型的Map
+     * @throws DBException 如果表不存在
+     */
+    public List<Map<String, Object>> getTableColumns(String table_name) throws DBException {
+        if (!isTableExists(table_name)) {
+            throw new DBException(ExceptionTypes.TableDoesNotExist(table_name));
+        }
+        TableMeta tableMeta = metaManager.getTable(table_name);
+        List<ColumnMeta> colList = tableMeta.columns_list;
+
+        List<Map<String, Object>> columns = new ArrayList<>();
+        for (ColumnMeta columnMeta : colList) {
+            Map<String, Object> columnInfo = new HashMap<>();
+            columnInfo.put("Field", columnMeta.name);
+            columnInfo.put("Type", columnMeta.type.toString().toUpperCase());
+            columnInfo.put("Key", ""); // 暂不支持主键和索引
+            columns.add(columnInfo);
+        }
+        return columns;
     }
 }
