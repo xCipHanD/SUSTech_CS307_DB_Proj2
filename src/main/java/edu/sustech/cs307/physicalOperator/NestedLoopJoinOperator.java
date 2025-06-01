@@ -108,27 +108,21 @@ public class NestedLoopJoinOperator implements PhysicalOperator {
                 currentLeftTuple = leftOperator.Current();
                 if (currentLeftTuple == null) {
                     leftHasNext = false;
-                    return;
+                    continue;
                 }
-                // 重置右表
                 rightOperator.Close();
                 rightOperator.Begin();
                 rightHasNext = rightOperator.hasNext();
                 rightResetNeeded = false;
-                // 更新左表状态
                 leftHasNext = leftOperator.hasNext();
             }
 
             while (rightHasNext) {
                 rightOperator.Next();
                 currentRightTuple = rightOperator.Current();
-                if (currentRightTuple == null) {
-                    rightHasNext = false;
-                    continue;
-                }
                 rightHasNext = rightOperator.hasNext();
                 
-                if (matchJoinCondition(currentLeftTuple, currentRightTuple)) {
+                if (currentRightTuple != null && matchJoinCondition(currentLeftTuple, currentRightTuple)) {
                     TabCol[] leftSchema = currentLeftTuple.getTupleSchema();
                     TabCol[] rightSchema = currentRightTuple.getTupleSchema();
                     TabCol[] joinSchema = new TabCol[leftSchema.length + rightSchema.length];
@@ -139,7 +133,6 @@ public class NestedLoopJoinOperator implements PhysicalOperator {
                 }
             }
             
-            // 右表扫描完，准备处理下一个左表元组
             currentLeftTuple = null;
         }
     }
@@ -148,20 +141,29 @@ public class NestedLoopJoinOperator implements PhysicalOperator {
      * 判断连接条件是否满足
      */
     private boolean matchJoinCondition(Tuple left, Tuple right) throws DBException {
-        if (expr == null || expr.isEmpty() || left == null || right == null)
+        if (expr == null || expr.isEmpty()) {
+            return true;
+        }
+        if (left == null || right == null) {
             return false;
+        }
             
-        // 构造连接元组
+        // 先构造连接元组
         TabCol[] leftSchema = left.getTupleSchema();
         TabCol[] rightSchema = right.getTupleSchema();
         TabCol[] joinSchema = new TabCol[leftSchema.length + rightSchema.length];
         System.arraycopy(leftSchema, 0, joinSchema, 0, leftSchema.length);
         System.arraycopy(rightSchema, 0, joinSchema, leftSchema.length, rightSchema.length);
         JoinTuple joinTuple = new JoinTuple(left, right, joinSchema);
-        
+
         // 评估所有连接条件
         for (Expression e : expr) {
-            if (!joinTuple.eval_expr(e)) {
+            try {
+                if (!joinTuple.eval_expr(e)) {
+                    return false;
+                }
+            } catch (DBException ex) {
+                
                 return false;
             }
         }

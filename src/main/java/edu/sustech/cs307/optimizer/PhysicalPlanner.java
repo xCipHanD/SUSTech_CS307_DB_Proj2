@@ -210,12 +210,10 @@ public class PhysicalPlanner {
             throws DBException {
         PhysicalOperator leftOp = generateOperator(dbManager, logicalJoinOp.getLeftInput());
         PhysicalOperator rightOp = generateOperator(dbManager, logicalJoinOp.getRightInput());
+        PhysicalOperator joinOp = new NestedLoopJoinOperator(leftOp, rightOp, logicalJoinOp.getJoinExprs());
+        
+        // 只有在有连接条件时才创建FilterOperator
         Collection<Expression> joinFilters = logicalJoinOp.getJoinExprs();
-        
-        // 创建基本的连接操作符
-        PhysicalOperator joinOp = new NestedLoopJoinOperator(leftOp, rightOp, joinFilters);
-        
-        // 只有当存在连接条件时才创建过滤操作符
         if (joinFilters != null && !joinFilters.isEmpty()) {
             return new FilterOperator(joinOp, joinFilters);
         }
