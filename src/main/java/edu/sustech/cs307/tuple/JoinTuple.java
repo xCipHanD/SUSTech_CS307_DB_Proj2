@@ -30,11 +30,45 @@ public class JoinTuple extends Tuple {
      */
     @Override
     public Value getValue(TabCol tabCol) throws DBException {
-        Value leftValue = leftTuple.getValue(tabCol);
-        if (leftValue != null) {
-            return leftValue;
+        String tableName = tabCol.getTableName();
+        String columnName = tabCol.getColumnName();
+
+        // 如果表名为空，尝试从schema中查找正确的表
+        if (tableName == null) {
+            for (TabCol tc : tupleSchema) {
+                if (tc.getColumnName().equals(columnName)) {
+                    tableName = tc.getTableName();
+                    break;
+                }
+            }
         }
-        return rightTuple.getValue(tabCol);
+
+        // 先从左表尝试获取值
+        Value leftValue = null;
+        try {
+            if (tableName != null) {
+                TabCol leftTabCol = new TabCol(tableName, columnName);
+                leftValue = leftTuple.getValue(leftTabCol);
+                if (leftValue != null) {
+                    return leftValue;
+                }
+            }
+        } catch (DBException e) {
+            // 忽略异常，继续尝试右表
+        }
+
+        // 如果左表没有找到，尝试从右表获取
+        try {
+            if (tableName != null) {
+                TabCol rightTabCol = new TabCol(tableName, columnName);
+                return rightTuple.getValue(rightTabCol);
+            }
+        } catch (DBException e) {
+            // 如果右表也失败，抛出异常
+            
+        }
+        
+        return null;
     }
 
     /**
@@ -49,12 +83,10 @@ public class JoinTuple extends Tuple {
 
     @Override
     public Value[] getValues() throws DBException {
-        // 通过 meta 顺序和信息获取所有 Value
-        ArrayList<Value> values = new ArrayList<>();
-        for (var tabcol : this.tupleSchema) {
-            Value value = getValue(tabcol);
-            values.add(value);
+        Value[] result = new Value[tupleSchema.length];
+        for (int i = 0; i < tupleSchema.length; i++) {
+            result[i] = getValue(tupleSchema[i]);
         }
-        return values.toArray(new Value[0]);
+        return result;
     }
 }

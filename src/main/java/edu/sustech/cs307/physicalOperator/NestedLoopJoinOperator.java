@@ -100,6 +100,7 @@ public class NestedLoopJoinOperator implements PhysicalOperator {
     private void advanceToNextJoin() throws DBException {
         currentJoinTuple = null;
         while (true) {
+            // 如果左表当前元组为空，获取下一个左表元组
             if (currentLeftTuple == null) {
                 if (!leftHasNext) {
                     return;
@@ -107,22 +108,31 @@ public class NestedLoopJoinOperator implements PhysicalOperator {
                 leftOperator.Next();
                 currentLeftTuple = leftOperator.Current();
                 if (currentLeftTuple == null) {
-                    leftHasNext = false;
-                    continue;
+                    leftHasNext = leftOperator.hasNext();
+                    return;
                 }
+                // 重置右表
                 rightOperator.Close();
                 rightOperator.Begin();
                 rightHasNext = rightOperator.hasNext();
-                rightResetNeeded = false;
-                leftHasNext = leftOperator.hasNext();
+                if (!rightHasNext) {
+                    currentLeftTuple = null;
+                    continue;
+                }
             }
 
+            // 遍历右表寻找匹配
             while (rightHasNext) {
                 rightOperator.Next();
                 currentRightTuple = rightOperator.Current();
                 rightHasNext = rightOperator.hasNext();
                 
-                if (currentRightTuple != null && matchJoinCondition(currentLeftTuple, currentRightTuple)) {
+                if (currentRightTuple == null) {
+                    continue;
+                }
+
+                if (matchJoinCondition(currentLeftTuple, currentRightTuple)) {
+                    // 构造连接元组
                     TabCol[] leftSchema = currentLeftTuple.getTupleSchema();
                     TabCol[] rightSchema = currentRightTuple.getTupleSchema();
                     TabCol[] joinSchema = new TabCol[leftSchema.length + rightSchema.length];
@@ -133,7 +143,9 @@ public class NestedLoopJoinOperator implements PhysicalOperator {
                 }
             }
             
+            // 右表扫描完毕，移动到下一个左表元组
             currentLeftTuple = null;
+            leftHasNext = leftOperator.hasNext();
         }
     }
 
@@ -142,21 +154,23 @@ public class NestedLoopJoinOperator implements PhysicalOperator {
      */
     private boolean matchJoinCondition(Tuple left, Tuple right) throws DBException {
         if (expr == null || expr.isEmpty()) {
-            return true;
+            return true;  // 笛卡尔积
         }
+        
         if (left == null || right == null) {
             return false;
         }
-            
-        // 先构造连接元组
+
+        // 构造连接元组
         TabCol[] leftSchema = left.getTupleSchema();
         TabCol[] rightSchema = right.getTupleSchema();
         TabCol[] joinSchema = new TabCol[leftSchema.length + rightSchema.length];
         System.arraycopy(leftSchema, 0, joinSchema, 0, leftSchema.length);
         System.arraycopy(rightSchema, 0, joinSchema, leftSchema.length, rightSchema.length);
+        
         JoinTuple joinTuple = new JoinTuple(left, right, joinSchema);
-
-        // 评估所有连接条件
+        
+        // 对每个连接条件进行评估
         for (Expression e : expr) {
             try {
                 if (!joinTuple.eval_expr(e)) {
@@ -167,6 +181,7 @@ public class NestedLoopJoinOperator implements PhysicalOperator {
                 return false;
             }
         }
+        
         return true;
     }
 }
