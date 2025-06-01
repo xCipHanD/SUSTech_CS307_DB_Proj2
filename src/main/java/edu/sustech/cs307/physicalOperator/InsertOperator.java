@@ -44,7 +44,8 @@ public class InsertOperator implements PhysicalOperator {
             ByteBuf buffer = Unpooled.buffer();
             for (int i = 0; i < values.size(); i++) {
                 buffer.writeBytes(values.get(i).ToByte());
-                if ((columnSize == 1) || ((i + 1) % columnSize == 0 && i != 0)) {
+                // 当收集完一行的所有列数据时插入记录
+                if ((i + 1) % columnSize == 0) {
                     fileHandle.InsertRecord(buffer);
                     buffer.clear();
                 }
