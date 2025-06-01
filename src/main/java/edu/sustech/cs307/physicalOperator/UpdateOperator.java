@@ -33,15 +33,40 @@ public class UpdateOperator implements PhysicalOperator {
 
     public UpdateOperator(PhysicalOperator inputOperator, String tableName, List<UpdateSet> updateSetList,
             Expression whereExpr) {
-        if (!(inputOperator instanceof SeqScanOperator seqScanOperator)) {
-            throw new RuntimeException("The delete operator only accepts SeqScanOperator as input");
+        // UpdateOperator 现在可以接受 SeqScanOperator 或 FilterOperator 作为输入
+        if (inputOperator instanceof SeqScanOperator seqScanOperator) {
+            this.seqScanOperator = seqScanOperator;
+        } else if (inputOperator instanceof FilterOperator filterOperator) {
+            // 从 FilterOperator 中提取底层的 SeqScanOperator
+            PhysicalOperator child = getChildOperator(filterOperator);
+            if (!(child instanceof SeqScanOperator)) {
+                throw new RuntimeException("The update operator requires SeqScanOperator as the base scanner, but got: "
+                        + child.getClass().getSimpleName());
+            }
+            this.seqScanOperator = (SeqScanOperator) child;
+        } else {
+            throw new RuntimeException(
+                    "The update operator only accepts SeqScanOperator or FilterOperator as input, but got: "
+                            + inputOperator.getClass().getSimpleName());
         }
-        this.seqScanOperator = seqScanOperator;
+
         this.tableName = tableName;
         this.updateSetList = updateSetList;
         this.whereExpr = whereExpr;
         this.updateCount = 0;
         this.isDone = false;
+    }
+
+    // Helper method to extract the child operator from FilterOperator
+    private PhysicalOperator getChildOperator(FilterOperator filterOperator) {
+        // 通过反射获取FilterOperator的子操作符
+        try {
+            java.lang.reflect.Field field = FilterOperator.class.getDeclaredField("child");
+            field.setAccessible(true);
+            return (PhysicalOperator) field.get(filterOperator);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to extract child operator from FilterOperator: " + e.getMessage());
+        }
     }
 
     @Override
@@ -106,7 +131,9 @@ public class UpdateOperator implements PhysicalOperator {
                             throw new DBException(ExceptionTypes
                                     .ColumnDoesNotExist("Column " + targetColumnName + " in table " + targetTable));
                         }
-                        Value newValue = tuple.evaluateExpression(expression);
+                        // 使用带类型提示的表达式求值，根据目标列的类型来推断常量的正确类型
+                        Value newValue = tuple.evaluateExpressionWithTypeHint(expression, targetTable,
+                                targetColumnName);
                         newValues.set(index, newValue);
                     }
                 }

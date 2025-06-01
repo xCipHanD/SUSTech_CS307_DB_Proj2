@@ -54,7 +54,7 @@ public class LogicalJoinOperator extends LogicalOperator {
         if (rightLines.length > 0) {
             sb.append("\n└── ").append(rightLines[0]);
             for (int i = 1; i < rightLines.length; i++) {
-                sb.append("\n    ").append(rightLines[i]);
+                sb.append("\n\t").append(rightLines[i]);
             }
         }
 

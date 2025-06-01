@@ -729,7 +729,7 @@
                 if (data.data && data.data.length > 0) {
                     html += createDataTable(data.data);
                 } else if (data.message) {
-                    html += `<div class="success">${escapeHtml(data.message)}</div>`;
+                    html += `<div class="success">${formatMessageText(data.message)}</div>`;
                 } else {
                     html += '<div class="no-results">查询执行成功，但无返回数据</div>';
                 }
@@ -738,7 +738,7 @@
             } else if (data.status === 'help') {
                 resultsContainer.innerHTML = `
                     <div class="success">
-                        <pre>${escapeHtml(data.message)}</pre>
+                        ${formatMessageText(data.message)}
                     </div>
                 `;
             } else if (data.status === 'partial') {
@@ -791,12 +791,12 @@
                             html += createDataTable(result.data);
                         } else if (result.message) {
                             html += `<div class="statement-message success">
-                                ${escapeHtml(result.message)}
+                                ${formatMessageText(result.message)}
                             </div>`;
                         }
                     } else {
                         html += `<div class="statement-message error">
-                            ${escapeHtml(result.message)}
+                            ${formatMessageText(result.message)}
                         </div>`;
                     }
 
@@ -854,6 +854,14 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        // 处理包含换行符的文本，将其转换为HTML格式
+        function formatMessageText(text) {
+            if (!text) return '';
+            const escapedText = escapeHtml(text);
+            return escapedText.replace(/\n/g, '<br>')
+                .replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;');  // 将 \t 替换为四个空格
         }
 
         // 常用 SQL 模板
