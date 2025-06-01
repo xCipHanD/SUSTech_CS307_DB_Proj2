@@ -4,6 +4,7 @@ import edu.sustech.cs307.exception.DBException;
 import edu.sustech.cs307.exception.ExceptionTypes;
 import edu.sustech.cs307.logicalOperator.LogicalAggregateOperator;
 import edu.sustech.cs307.meta.ColumnMeta;
+import edu.sustech.cs307.meta.TabCol;
 import edu.sustech.cs307.tuple.TempTuple;
 import edu.sustech.cs307.tuple.Tuple;
 import edu.sustech.cs307.value.Value;
@@ -42,26 +43,7 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
         List<SelectItem<?>> selectItems = logicalOperator.getAggregateExpressions();
         List<Expression> groupByExpressions = logicalOperator.getGroupByExpressions();
 
-        // 输出模式将首先包含分组列，然后是聚合函数的结果
-        if (groupByExpressions != null) {
-            for (Expression expr : groupByExpressions) {
-                if (expr instanceof Column col) {
-                    // 尝试从子运算符的模式中查找列元数据
-                    ColumnMeta childColMeta = findColumnMeta(col, child.outputSchema());
-                    if (childColMeta != null) {
-                        schema.add(new ColumnMeta(childColMeta.tableName, childColMeta.name, childColMeta.type,
-                                childColMeta.size, schema.size()));
-                    } else {
-                        // 如果未找到（例如表达式）- 这可能需要更强大的处理
-                        schema.add(new ColumnMeta(null, col.getColumnName(), ValueType.UNKNOWN, 0, schema.size()));
-                    }
-                } else {
-                    // 对于GROUP BY中的表达式，可能更难静态确定类型
-                    schema.add(new ColumnMeta(null, expr.toString(), ValueType.UNKNOWN, 0, schema.size()));
-                }
-            }
-        }
-
+        // 按照SELECT列表的顺序构建schema，而不是先GROUP BY后聚合函数
         for (SelectItem<?> item : selectItems) {
             if (item.getExpression() instanceof Function func) {
                 String alias = item.getAlias() != null ? item.getAlias().getName() : func.toString();
@@ -77,15 +59,16 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
                     }
                 }
                 schema.add(new ColumnMeta(tableName, alias, type, 0, schema.size()));
-            } else if (item.getExpression() instanceof Column col && groupByExpressions == null) {
-                // 此情况适用于没有GROUP BY时的非聚合列。
-                // SQL标准通常要求所有非聚合列都在GROUP BY中。
-                // 如果我们允许这种情况，我们需要决定如何获取其元数据。
-                // 目前，我们假设有效的SQL不会在没有GROUP BY的情况下发生这种情况，
-                // 或者它在聚合后由project运算符处理。
-                // 如果它是聚合后的简单列投影（例如 SELECT agg_col FROM (...)）
-                // 这个运算符不应该看到它。
-                // 如果是 SELECT col, COUNT(*) FROM table，这在没有GROUP BY col的情况下是无效的SQL。
+            } else if (item.getExpression() instanceof Column col) {
+                // 处理GROUP BY列（按照它们在SELECT中出现的顺序）
+                ColumnMeta childColMeta = findColumnMeta(col, child.outputSchema());
+                if (childColMeta != null) {
+                    schema.add(new ColumnMeta(childColMeta.tableName, childColMeta.name, childColMeta.type,
+                            childColMeta.size, schema.size()));
+                } else {
+                    // 如果未找到（例如表达式）- 这可能需要更强大的处理
+                    schema.add(new ColumnMeta(null, col.getColumnName(), ValueType.UNKNOWN, 0, schema.size()));
+                }
             }
         }
 
@@ -235,7 +218,10 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
                 row.add(new Value(null, ValueType.UNKNOWN));
             }
         }
-        resultTuples.add(new TempTuple(row));
+
+        // 创建schema信息供TempTuple使用
+        TabCol[] tupleSchema = createTupleSchema();
+        resultTuples.add(new TempTuple(row, tupleSchema));
     }
 
     /**
@@ -298,23 +284,33 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
             }
         }
 
-        // 构建结果
+        // 构建结果 - 按照SELECT列表的顺序，而不是先GROUP BY后聚合函数
         for (Map.Entry<List<Value>, Map<String, Object>> entry : groupedAggregates.entrySet()) {
             List<Value> groupByKey = entry.getKey();
             Map<String, Object> groupAggregates = entry.getValue();
 
-            List<Value> finalRow = new ArrayList<>(groupByKey); // 从分组值开始
+            List<Value> finalRow = new ArrayList<>();
 
-            // 添加聚合函数结果
+            // 按照SELECT中的顺序添加列值
             for (SelectItem<?> item : selectItems) {
                 if (item.getExpression() instanceof Function func) {
+                    // 聚合函数
                     String key = func.toString();
                     Object aggValue = groupAggregates.get(key);
                     finalRow.add(convertToValue(aggValue, func));
+                } else if (item.getExpression() instanceof Column col) {
+                    // GROUP BY列
+                    // 找到这个列在GROUP BY表达式中的位置
+                    for (int i = 0; i < groupByExpressions.size(); i++) {
+                        if (groupByExpressions.get(i).toString().equals(col.toString())) {
+                            finalRow.add(groupByKey.get(i));
+                            break;
+                        }
+                    }
                 }
             }
 
-            resultTuples.add(new TempTuple(finalRow));
+            resultTuples.add(new TempTuple(finalRow, createTupleSchema()));
         }
     }
 
@@ -609,33 +605,63 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
     @Override
     public ArrayList<ColumnMeta> outputSchema() {
         if (this.schema == null) {
-            // 模式应该在Begin()中构建。如果之前调用，这是有问题的。
-            // 为了安全起见，尝试构建一个基本模式，但这表明存在问题。
-            // 这是一个简化版本，Begin()应该完成完整的构建。
+            // 如果schema还没有初始化，创建一个基本的schema
             this.schema = new ArrayList<>();
             List<SelectItem<?>> selectItems = logicalOperator.getAggregateExpressions();
             List<Expression> groupByExpressions = logicalOperator.getGroupByExpressions();
 
-            if (groupByExpressions != null) {
-                for (Expression expr : groupByExpressions) {
-                    this.schema.add(new ColumnMeta(null, expr.toString(), ValueType.UNKNOWN, 0, this.schema.size()));
-                }
-            }
+            // 按照SELECT列表的顺序构建schema
             for (SelectItem<?> item : selectItems) {
                 if (item.getExpression() instanceof Function func) {
                     String alias = item.getAlias() != null ? item.getAlias().getName() : func.toString();
                     ValueType type = inferAggregateType(func);
-                    this.schema.add(new ColumnMeta(null, alias, type, 0, this.schema.size()));
-                } else if (item.getExpression() instanceof Column col && groupByExpressions == null) {
-                    // 如果没有分组，这种情况理想情况下不应由此运算符构建
-                } else if (item.getExpression() instanceof Column col && groupByExpressions != null) {
-                    // 如果它是一个也是分组键的列，则已添加。
-                    // 如果它是一个投影的列，而不是分组键，也不是聚合，
-                    // 那么查询可能是无效的，或者需要ProjectOperator来处理它。
-                    // 我们在这里只向模式添加聚合函数或分组键。
+                    // 提取表名
+                    String tableName = null;
+                    if (func.getParameters() != null && func.getParameters().getExpressions() != null
+                            && !func.getParameters().getExpressions().isEmpty()) {
+                        if (func.getParameters().getExpressions().get(0) instanceof Column colParam
+                                && colParam.getTable() != null) {
+                            tableName = colParam.getTable().getName();
+                        }
+                    }
+                    this.schema.add(new ColumnMeta(tableName, alias, type, 0, this.schema.size()));
+                } else if (item.getExpression() instanceof Column col) {
+                    // 处理GROUP BY列
+                    ColumnMeta childColMeta = null;
+                    if (child != null) {
+                        ArrayList<ColumnMeta> childSchema = child.outputSchema();
+                        if (childSchema != null) {
+                            childColMeta = findColumnMeta(col, childSchema);
+                        }
+                    }
+                    if (childColMeta != null) {
+                        this.schema.add(new ColumnMeta(childColMeta.tableName, childColMeta.name,
+                                childColMeta.type, childColMeta.size, this.schema.size()));
+                    } else {
+                        // 如果未找到，创建一个默认的列元数据
+                        String tableName = col.getTable() != null ? col.getTable().getName() : null;
+                        this.schema.add(new ColumnMeta(tableName, col.getColumnName(),
+                                ValueType.UNKNOWN, 0, this.schema.size()));
+                    }
                 }
             }
         }
         return this.schema;
+    }
+
+    /**
+     * 创建用于TempTuple的schema信息
+     */
+    private TabCol[] createTupleSchema() {
+        if (this.schema == null) {
+            return new TabCol[0];
+        }
+
+        TabCol[] tupleSchema = new TabCol[this.schema.size()];
+        for (int i = 0; i < this.schema.size(); i++) {
+            ColumnMeta colMeta = this.schema.get(i);
+            tupleSchema[i] = new TabCol(colMeta.tableName, colMeta.name);
+        }
+        return tupleSchema;
     }
 }

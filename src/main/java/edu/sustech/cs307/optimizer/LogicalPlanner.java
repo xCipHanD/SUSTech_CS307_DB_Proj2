@@ -171,7 +171,11 @@ public class LogicalPlanner {
     }
 
     private static LogicalOperator handleUpdate(DBManager dbManager, Update updateStmt) throws DBException {
-        LogicalOperator root = new LogicalTableScanOperator(updateStmt.getTable().getName(), dbManager);
+        LogicalTableScanOperator tableScan = new LogicalTableScanOperator(updateStmt.getTable().getName(), dbManager);
+        LogicalOperator root = tableScan;
+        if (updateStmt.getWhere() != null) {
+            root = new LogicalFilterOperator(root, updateStmt.getWhere());
+        }
         return new LogicalUpdateOperator(root, updateStmt.getTable().getName(), updateStmt.getUpdateSets(),
                 updateStmt.getWhere());
     }

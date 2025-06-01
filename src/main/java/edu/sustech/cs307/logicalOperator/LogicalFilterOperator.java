@@ -36,9 +36,9 @@ public class LogicalFilterOperator extends LogicalOperator {
 
         // 子节点处理
         if (childLines.length > 0) {
-            sb.append("\n    └── ").append(childLines[0]);
+            sb.append("\n└── ").append(childLines[0]);
             for (int i = 1; i < childLines.length; i++) {
-                sb.append("\n    ").append(childLines[i]);
+                sb.append("\n\t").append(childLines[i]);
             }
         }
 

@@ -348,11 +348,39 @@ public class PhysicalPlanner {
 
     private static PhysicalOperator handleUpdate(DBManager dbManager, LogicalUpdateOperator logicalUpdateOp)
             throws DBException {
-        PhysicalOperator scanner = generateOperator(dbManager, logicalUpdateOp.getChild());
+        // 对于UPDATE操作，强制使用SeqScanOperator，不使用索引扫描
+        // 因为UpdateOperator期望接收SeqScanOperator作为输入
+        LogicalOperator child = logicalUpdateOp.getChild();
+        PhysicalOperator scanner;
+
+        if (child instanceof LogicalFilterOperator) {
+            // 如果有WHERE条件，先创建SeqScan，然后应用过滤器
+            LogicalFilterOperator filterOp = (LogicalFilterOperator) child;
+            String tableName = logicalUpdateOp.getTableName();
+
+            SeqScanOperator seqScan = new SeqScanOperator(tableName, dbManager);
+            scanner = new FilterOperator(seqScan, filterOp.getWhereExpr());
+
+            Logger.info("Using SeqScanOperator with FilterOperator for UPDATE on table {}", tableName);
+        } else if (child instanceof LogicalTableScanOperator) {
+            // 直接表扫描，强制使用SeqScan
+            String tableName = ((LogicalTableScanOperator) child).getTableName();
+            scanner = new SeqScanOperator(tableName, dbManager);
+
+            Logger.info("Using SeqScanOperator for UPDATE on table {}", tableName);
+        } else {
+            // 其他情况，使用默认处理但确保最终是SeqScan
+            PhysicalOperator generatedOp = generateOperator(dbManager, child);
+            if (!(generatedOp instanceof SeqScanOperator) && !(generatedOp instanceof FilterOperator)) {
+                throw new DBException(ExceptionTypes.InvalidOperation(
+                        "UPDATE operation requires SeqScanOperator, but got: "
+                                + generatedOp.getClass().getSimpleName()));
+            }
+            scanner = generatedOp;
+        }
+
         return new UpdateOperator(scanner, logicalUpdateOp.getTableName(),
-                logicalUpdateOp
-                        .getUpdateSets(),
-                logicalUpdateOp.getExpression());
+                logicalUpdateOp.getUpdateSets(), logicalUpdateOp.getExpression());
     }
 
     private static PhysicalOperator handleOrderBy(DBManager dbManager, LogicalOrderByOperator orderByOperator)

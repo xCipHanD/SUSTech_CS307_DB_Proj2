@@ -41,7 +41,7 @@ public class LogicalOrderByOperator extends LogicalOperator {
                 if (i == 0) {
                     sb.append("└── ");
                 } else {
-                    sb.append("    ");
+                    sb.append("\t");
                 }
                 sb.append(childLines[i]);
             }

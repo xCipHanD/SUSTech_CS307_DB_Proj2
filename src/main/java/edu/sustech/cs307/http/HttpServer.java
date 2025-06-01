@@ -486,35 +486,13 @@ public class HttpServer {
                     return response;
                 }
 
-                PhysicalOperator physicalOp = PhysicalPlanner.generateOperator(dbManager, logicalOp);
-                if (physicalOp == null) {
-                    response.put("status", "error");
-                    response.put("message", "Failed to generate physical plan");
-                    return response;
-                }
-
-                // 创建简单的执行计划说明
-                ArrayList<Map<String, Object>> planRows = new ArrayList<>();
-                Map<String, Object> planRow = new LinkedHashMap<>();
-                planRow.put("Operation", physicalOp.getClass().getSimpleName());
-                planRow.put("Description", "Physical operator: " + physicalOp.getClass().getSimpleName());
-
-                // 获取输出模式信息
-                ArrayList<ColumnMeta> schema = physicalOp.outputSchema();
-                StringBuilder schemaDesc = new StringBuilder();
-                for (int i = 0; i < schema.size(); i++) {
-                    if (i > 0)
-                        schemaDesc.append(", ");
-                    ColumnMeta cm = schema.get(i);
-                    schemaDesc.append(cm.name).append("(").append(cm.type).append(")");
-                }
-                planRow.put("Output_Schema", schemaDesc.toString());
-                planRows.add(planRow);
+                // 直接使用LogicalOperator的toString()方法获取执行计划
+                String explainResult = logicalOp.toString();
 
                 response.put("status", "success");
-                response.put("message", "Query plan generated successfully");
-                response.put("data", planRows);
-                response.put("rowCount", planRows.size());
+                response.put("message", explainResult);
+                response.put("data", new ArrayList<>());
+                response.put("rowCount", 0);
             } catch (Exception e) {
                 response.put("status", "error");
                 response.put("message", "Error explaining query: " + e.getMessage());

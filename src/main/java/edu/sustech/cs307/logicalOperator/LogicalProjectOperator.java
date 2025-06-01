@@ -66,7 +66,7 @@ public class LogicalProjectOperator extends LogicalOperator {
         if (childLines.length > 0) {
             sb.append("\n└── ").append(childLines[0]);
             for (int i = 1; i < childLines.length; i++) {
-                sb.append("\n    ").append(childLines[i]);
+                sb.append("\n\t").append(childLines[i]);
             }
         }
 
