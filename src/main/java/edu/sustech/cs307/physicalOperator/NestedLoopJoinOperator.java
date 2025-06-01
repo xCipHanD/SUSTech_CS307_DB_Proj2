@@ -47,7 +47,6 @@ public class NestedLoopJoinOperator implements PhysicalOperator {
         currentJoinTuple = null;
         isOpen = true;
         rightResetNeeded = false;
-        // 预先推进到第一个可用的连接元组
         advanceToNextJoin();
     }
 
@@ -55,13 +54,14 @@ public class NestedLoopJoinOperator implements PhysicalOperator {
     public boolean hasNext() throws DBException {
         if (!isOpen)
             return false;
-        return currentJoinTuple != null;
+        return leftOperator.hasNext() || rightOperator.hasNext() ;
     }
 
     @Override
     public void Next() throws DBException {
         if (!isOpen)
             return;
+
         advanceToNextJoin();
     }
 
@@ -126,7 +126,7 @@ public class NestedLoopJoinOperator implements PhysicalOperator {
                 rightOperator.Next();
                 currentRightTuple = rightOperator.Current();
                 rightHasNext = rightOperator.hasNext();
-                
+
                 if (currentRightTuple == null) {
                     continue;
                 }
@@ -142,7 +142,7 @@ public class NestedLoopJoinOperator implements PhysicalOperator {
                     return;
                 }
             }
-            
+
             // 右表扫描完毕，移动到下一个左表元组
             currentLeftTuple = null;
             leftHasNext = leftOperator.hasNext();
@@ -154,9 +154,9 @@ public class NestedLoopJoinOperator implements PhysicalOperator {
      */
     private boolean matchJoinCondition(Tuple left, Tuple right) throws DBException {
         if (expr == null || expr.isEmpty()) {
-            return true;  // 笛卡尔积
+            return true; // 笛卡尔积
         }
-        
+
         if (left == null || right == null) {
             return false;
         }
@@ -167,9 +167,9 @@ public class NestedLoopJoinOperator implements PhysicalOperator {
         TabCol[] joinSchema = new TabCol[leftSchema.length + rightSchema.length];
         System.arraycopy(leftSchema, 0, joinSchema, 0, leftSchema.length);
         System.arraycopy(rightSchema, 0, joinSchema, leftSchema.length, rightSchema.length);
-        
+
         JoinTuple joinTuple = new JoinTuple(left, right, joinSchema);
-        
+
         // 对每个连接条件进行评估
         for (Expression e : expr) {
             try {
@@ -177,11 +177,11 @@ public class NestedLoopJoinOperator implements PhysicalOperator {
                     return false;
                 }
             } catch (DBException ex) {
-                
+
                 return false;
             }
         }
-        
+
         return true;
     }
 }

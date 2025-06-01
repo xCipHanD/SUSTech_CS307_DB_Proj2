@@ -1,7 +1,5 @@
 package edu.sustech.cs307.tuple;
 
-import java.util.ArrayList;
-
 import edu.sustech.cs307.exception.DBException;
 import edu.sustech.cs307.meta.TabCol;
 import edu.sustech.cs307.value.Value;
@@ -33,7 +31,6 @@ public class JoinTuple extends Tuple {
         String tableName = tabCol.getTableName();
         String columnName = tabCol.getColumnName();
 
-        // 如果表名为空，尝试从schema中查找正确的表
         if (tableName == null) {
             for (TabCol tc : tupleSchema) {
                 if (tc.getColumnName().equals(columnName)) {
@@ -42,8 +39,6 @@ public class JoinTuple extends Tuple {
                 }
             }
         }
-
-        // 先从左表尝试获取值
         Value leftValue = null;
         try {
             if (tableName != null) {
@@ -54,20 +49,17 @@ public class JoinTuple extends Tuple {
                 }
             }
         } catch (DBException e) {
-            // 忽略异常，继续尝试右表
         }
 
-        // 如果左表没有找到，尝试从右表获取
         try {
             if (tableName != null) {
                 TabCol rightTabCol = new TabCol(tableName, columnName);
                 return rightTuple.getValue(rightTabCol);
             }
         } catch (DBException e) {
-            // 如果右表也失败，抛出异常
-            
+
         }
-        
+
         return null;
     }
 

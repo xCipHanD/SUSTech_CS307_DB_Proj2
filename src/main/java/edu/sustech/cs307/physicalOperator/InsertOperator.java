@@ -48,20 +48,16 @@ public class InsertOperator implements PhysicalOperator {
             var fileHandle = dbManager.getRecordManager().OpenFile(data_file);
             var tableMeta = dbManager.getMetaManager().getTable(data_file);
 
-            // 🚀 性能优化：启用批量模式减少磁盘同步
             dbManager.getDiskManager().setBatchMode(true);
 
-            // 获取索引同步器
             IndexSynchronizer indexSynchronizer = new IndexSynchronizer(
                     dbManager.getIndexManager(),
                     dbManager.getMetaManager());
 
-            // 获取主键列信息
             String primaryKeyColumn = tableMeta.getPrimaryKeyColumn();
             int primaryKeyIndex = -1;
 
             if (primaryKeyColumn != null) {
-                // 找到主键列在列序列中的索引
                 for (int i = 0; i < tableMeta.columns_list.size(); i++) {
                     if (tableMeta.columns_list.get(i).name.equals(primaryKeyColumn)) {
                         primaryKeyIndex = i;
@@ -70,46 +66,34 @@ public class InsertOperator implements PhysicalOperator {
                 }
             }
 
-            // 🚀 性能优化：批量收集主键值进行冲突检查（只扫描一次表）
             if (primaryKeyColumn != null && primaryKeyIndex != -1) {
                 Set<Value> primaryKeyValues = new HashSet<>();
                 int totalRows = values.size() / columnSize;
 
-                // 收集所有要插入的主键值
                 for (int row = 0; row < totalRows; row++) {
                     Value primaryKeyValue = values.get(row * columnSize + primaryKeyIndex);
                     primaryKeyValues.add(primaryKeyValue);
                 }
 
-                // 批量检查主键冲突（只扫描一次表或使用索引）
                 if (batchCheckPrimaryKeyConflict(tableMeta, primaryKeyColumn, primaryKeyValues)) {
                     throw new DBException(ExceptionTypes.PrimaryKeyViolation(
                             data_file, primaryKeyColumn, "One or more primary key conflicts detected"));
                 }
             }
 
-            // 🚀 性能优化：批量插入记录
             List<RID> insertedRIDs = new ArrayList<>();
             List<Record> insertedRecords = new ArrayList<>();
-
-            // 使用更大的缓冲区进行批量操作，减少内存分配
             int totalRows = values.size() / columnSize;
-            // 预分配容量以避免动态扩容
             insertedRIDs = new ArrayList<>(totalRows);
             insertedRecords = new ArrayList<>(totalRows);
-
-            // 批量处理行数据
             for (int row = 0; row < totalRows; row++) {
-                // 为当前行创建缓冲区
                 ByteBuf rowBuffer = Unpooled.buffer();
                 try {
-                    // 写入当前行的所有列数据
                     for (int col = 0; col < columnSize; col++) {
                         Value value = values.get(row * columnSize + col);
                         rowBuffer.writeBytes(value.ToByte());
                     }
 
-                    // 插入记录并收集RID
                     RID insertedRID = fileHandle.InsertRecord(rowBuffer);
                     insertedRIDs.add(insertedRID);
                 } finally {
@@ -117,32 +101,23 @@ public class InsertOperator implements PhysicalOperator {
                 }
             }
 
-            // 🚀 性能优化：延迟索引同步到批量插入完成后
-            // 只有在所有记录插入成功后才同步索引
             if (!insertedRIDs.isEmpty()) {
-                // 批量获取插入的记录用于索引同步
                 for (RID rid : insertedRIDs) {
                     Record record = fileHandle.GetRecord(rid);
                     insertedRecords.add(record);
                 }
-
-                // 批量同步索引
                 try {
                     batchUpdateIndexes(indexSynchronizer, insertedRecords, insertedRIDs);
                 } catch (DBException e) {
                     org.pmw.tinylog.Logger.warn("Failed to batch update indexes after insert: {}", e.getMessage());
-                    // 继续执行，不因为索引更新失败而中断插入操作
                 }
             }
 
             this.rowCount = totalRows;
-
-            // 🚀 性能优化：批量操作完成后强制同步并关闭批量模式
             dbManager.getDiskManager().setBatchMode(false);
             dbManager.getDiskManager().forceSyncAll();
 
         } catch (Exception e) {
-            // 确保在异常情况下也关闭批量模式
             try {
                 dbManager.getDiskManager().setBatchMode(false);
             } catch (Exception ignored) {
@@ -167,7 +142,6 @@ public class InsertOperator implements PhysicalOperator {
             var index = indexManager.getIndex(tableMeta.tableName, primaryKeyColumn);
 
             if (index != null) {
-                // 使用索引批量查找
                 for (Value pkValue : primaryKeyValues) {
                     var matchingRIDs = index.search(pkValue);
                     if (matchingRIDs != null && !matchingRIDs.isEmpty()) {
@@ -176,11 +150,9 @@ public class InsertOperator implements PhysicalOperator {
                 }
                 return false;
             } else {
-                // 如果没有索引，使用优化的全表扫描
                 return batchCheckPrimaryKeyConflictByTableScan(tableMeta, primaryKeyColumn, primaryKeyValues);
             }
         } catch (Exception e) {
-            // 如果索引查找失败，回退到全表扫描
             return batchCheckPrimaryKeyConflictByTableScan(tableMeta, primaryKeyColumn, primaryKeyValues);
         }
     }
@@ -199,7 +171,6 @@ public class InsertOperator implements PhysicalOperator {
                 return false;
             }
 
-            // 只扫描一次表，检查所有主键值
             while (seqScan.hasNext()) {
                 seqScan.Next();
                 var tuple = seqScan.Current();

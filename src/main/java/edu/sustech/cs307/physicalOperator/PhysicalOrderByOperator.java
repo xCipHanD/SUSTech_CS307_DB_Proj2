@@ -47,10 +47,7 @@ public class PhysicalOrderByOperator implements PhysicalOperator {
             allTuples.add(child.Current());
         }
 
-        // 创建比较器
         Comparator<Tuple> comparator = createComparator();
-
-        // 排序
         sortedTuples = new ArrayList<>(allTuples);
         Collections.sort(sortedTuples, comparator);
 
@@ -92,7 +89,6 @@ public class PhysicalOrderByOperator implements PhysicalOperator {
             String tableName = col.getTableName();
             String columnName = col.getColumnName();
 
-            // 如果表名为null，尝试从tuple的schema中推断
             if (tableName == null) {
                 TabCol[] schema = tuple.getTupleSchema();
                 for (TabCol tabCol : schema) {
@@ -105,8 +101,6 @@ public class PhysicalOrderByOperator implements PhysicalOperator {
 
             return tuple.getValue(new TabCol(tableName, columnName));
         } else {
-            // 对于其他表达式类型，需要实现expression evaluation
-            // 暂时简化处理
             throw new DBException(ExceptionTypes.UnsupportedExpression(expr));
         }
     }
@@ -137,7 +131,6 @@ public class PhysicalOrderByOperator implements PhysicalOperator {
         try {
             child.Close();
         } catch (DBException e) {
-            // Log error but don't throw during cleanup
         }
         sortedTuples.clear();
     }

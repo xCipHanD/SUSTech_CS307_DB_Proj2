@@ -42,14 +42,11 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
         this.schema = new ArrayList<>();
         List<SelectItem<?>> selectItems = logicalOperator.getAggregateExpressions();
         List<Expression> groupByExpressions = logicalOperator.getGroupByExpressions();
-
         // 按照SELECT列表的顺序构建schema，而不是先GROUP BY后聚合函数
         for (SelectItem<?> item : selectItems) {
             if (item.getExpression() instanceof Function func) {
                 String alias = item.getAlias() != null ? item.getAlias().getName() : func.toString();
-                // 根据函数确定类型，例如，COUNT为INTEGER
                 ValueType type = inferAggregateType(func);
-                // 提取表名
                 String tableName = null;
                 if (func.getParameters() != null && func.getParameters().getExpressions() != null
                         && !func.getParameters().getExpressions().isEmpty()) {
@@ -92,17 +89,14 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
             case "COUNT":
                 return ValueType.INTEGER;
             case "SUM":
-                // SUM类型取决于输入类型，这里需要更复杂的类型推断
-                // 为简化，我们假设是 INTEGER，但实际应该基于列类型
                 return inferSumType(func);
             case "AVG":
-                return ValueType.DOUBLE; // AVG通常是浮点数/双精度型
+                return ValueType.DOUBLE;
             case "MIN":
             case "MAX":
-                // MIN/MAX类型取决于输入类型
                 return inferMinMaxType(func);
             default:
-                return ValueType.INTEGER; // 默认值
+                return ValueType.INTEGER;
         }
     }
 
@@ -116,7 +110,6 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
             if (paramExpr instanceof Column column) {
                 ColumnMeta colMeta = findColumnMeta(column, child.outputSchema());
                 if (colMeta != null) {
-                    // 基于列类型返回适当的SUM类型
                     switch (colMeta.type) {
                         case INTEGER:
                             return ValueType.INTEGER;
@@ -154,7 +147,6 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
      * 执行简单聚合（无GROUP BY）
      */
     private void performSimpleAggregation(List<SelectItem<?>> selectItems) throws DBException {
-        // 初始化聚合计算器
         Map<String, Object> aggregateValues = new HashMap<>();
 
         for (SelectItem<?> item : selectItems) {
@@ -167,11 +159,11 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
                         aggregateValues.put(key, 0L);
                         break;
                     case "SUM":
-                        aggregateValues.put(key, null); // 初始为null
+                        aggregateValues.put(key, null);
                         break;
                     case "MIN":
                     case "MAX":
-                        aggregateValues.put(key, null); // 初始为null
+                        aggregateValues.put(key, null);
                         break;
                 }
             }
@@ -206,8 +198,6 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
                 }
             }
         }
-
-        // 构建结果行
         List<Value> row = new ArrayList<>();
         for (SelectItem<?> item : selectItems) {
             if (item.getExpression() instanceof Function func) {
@@ -218,8 +208,6 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
                 row.add(new Value(null, ValueType.UNKNOWN));
             }
         }
-
-        // 创建schema信息供TempTuple使用
         TabCol[] tupleSchema = createTupleSchema();
         resultTuples.add(new TempTuple(row, tupleSchema));
     }

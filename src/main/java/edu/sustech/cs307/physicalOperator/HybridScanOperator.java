@@ -8,6 +8,10 @@ import edu.sustech.cs307.tuple.Tuple;
 import edu.sustech.cs307.index.Index;
 import edu.sustech.cs307.value.Value;
 import edu.sustech.cs307.value.ValueType;
+import net.sf.jsqlparser.expression.DoubleValue;
+import net.sf.jsqlparser.expression.Expression;
+import net.sf.jsqlparser.expression.LongValue;
+import net.sf.jsqlparser.expression.StringValue;
 import net.sf.jsqlparser.expression.operators.relational.EqualsTo;
 import net.sf.jsqlparser.schema.Column;
 
@@ -71,7 +75,6 @@ public class HybridScanOperator implements PhysicalOperator {
         if (index != null && useIndex) {
             try {
                 if (searchKey != null) {
-                    // 有搜索键，使用索引进行精确查找
                     IndexScanOperator indexScan = new IndexScanOperator(tableName, columnName, searchKey, dbManager,
                             index);
                     indexScan.Begin();
@@ -81,7 +84,6 @@ public class HybridScanOperator implements PhysicalOperator {
                     Logger.info("Using IndexScanOperator for table {} on column {} with search key {}",
                             tableName, columnName, searchKey);
                 } else {
-                    // 没有搜索键，进行全表扫描，B+树索引不适合全表扫描，直接使用顺序扫描
                     currentOperator = new SeqScanOperator(tableName, dbManager);
                     currentOperator.Begin();
                     usingIndexScan = false;
@@ -92,13 +94,11 @@ public class HybridScanOperator implements PhysicalOperator {
             } catch (DBException e) {
                 Logger.warn("Index operation failed for table {} on column {}: {}, falling back to SeqScan",
                         tableName, columnName, e.getMessage());
-                // 索引操作失败，回退到顺序扫描
                 currentOperator = createSeqScanWithFilter();
                 currentOperator.Begin();
                 usingIndexScan = false;
             }
         } else {
-            // 智能选择：对于小表或没有索引，直接使用顺序扫描
             currentOperator = createSeqScanWithFilter();
             currentOperator.Begin();
             usingIndexScan = false;
@@ -112,20 +112,18 @@ public class HybridScanOperator implements PhysicalOperator {
         SeqScanOperator seqScan = new SeqScanOperator(tableName, dbManager);
 
         if (searchKey != null && columnName != null) {
-            // 创建等值过滤条件
             EqualsTo equalsTo = new EqualsTo();
             Column column = new Column(columnName);
 
-            // 根据搜索键类型创建对应的表达式
-            net.sf.jsqlparser.expression.Expression valueExpr;
+            Expression valueExpr;
             if (searchKey.type == ValueType.CHAR) {
-                valueExpr = new net.sf.jsqlparser.expression.StringValue((String) searchKey.value);
+                valueExpr = new StringValue((String) searchKey.value);
             } else if (searchKey.type == ValueType.INTEGER) {
-                valueExpr = new net.sf.jsqlparser.expression.LongValue((Long) searchKey.value);
+                valueExpr = new LongValue((Long) searchKey.value);
             } else if (searchKey.type == ValueType.FLOAT) {
-                valueExpr = new net.sf.jsqlparser.expression.DoubleValue((Float) searchKey.value);
+                valueExpr = new DoubleValue((Float) searchKey.value);
             } else if (searchKey.type == ValueType.DOUBLE) {
-                valueExpr = new net.sf.jsqlparser.expression.DoubleValue((Double) searchKey.value);
+                valueExpr = new DoubleValue((Double) searchKey.value);
             } else {
                 // 对于不支持的类型，返回未过滤的顺序扫描
                 return seqScan;

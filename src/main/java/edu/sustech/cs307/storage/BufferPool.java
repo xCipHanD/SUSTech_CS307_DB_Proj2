@@ -240,7 +240,6 @@ public class BufferPool {
             Integer frame_id = pageMap.get(position);
             if (frame_id != null) {
                 Page page = pages.get(frame_id);
-                // 完全清零页面数据，防止数据残留
                 page.data.setZero(0, page.data.capacity());
                 page.dirty = false;
                 page.pin_count = 0;
