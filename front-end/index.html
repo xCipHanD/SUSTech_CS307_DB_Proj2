@@ -641,59 +641,31 @@
             sqlInput.setSelectionRange(cursorPos + tableName.length, cursorPos + tableName.length);
         }
 
-        // 执行 SQL 查询
-        async function executeSQL() {
-            if (isExecuting) return;
+        // 处理包含换行符和转义字符的文本，将其转换为HTML格式
+        function formatMessageText(text) {
+            if (!text) return '';
 
-            const sqlInput = document.getElementById('sqlInput');
-            const sql = sqlInput.value.trim();
+            // 首先处理转义字符，然后再转义HTML
+            const processedText = text
+                .replace(/\\n/g, '\n')      // 将 \\n 转换为真正的换行符
+                .replace(/\\t/g, '\t')      // 将 \\t 转换为真正的制表符
+                .replace(/\\r/g, '\r')      // 将 \\r 转换为回车符
+                .replace(/\\\\/g, '\\');    // 将 \\\\ 转换为单个反斜杠
 
-            if (!sql) {
-                showError('请输入 SQL 查询语句');
-                return;
-            }
+            // 然后转义HTML特殊字符
+            const escapedText = escapeHtml(processedText);
 
-            isExecuting = true;
-            const executeBtn = document.getElementById('executeBtn');
-            executeBtn.disabled = true;
-            executeBtn.innerHTML = '⏳ 执行中...';
-
-            const resultsContainer = document.getElementById('resultsContainer');
-            resultsContainer.innerHTML = '<div class="loading">正在执行查询</div>';
-
-            try {
-                const response = await fetch(API_BASE_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    },
-                    body: `sql=${encodeURIComponent(sql)}`
-                });
-                const data = await response.json();
-
-                displayResults(data, sql);
-
-                // 如果是修改数据库结构的操作，刷新表列表
-                if (sql.toLowerCase().includes('create table') ||
-                    sql.toLowerCase().includes('drop table') ||
-                    sql.toLowerCase().includes('alter table')) {
-                    setTimeout(loadTables, 500);
-                }
-
-            } catch (error) {
-                console.error('查询执行失败:', error);
-                showError('网络错误或服务器不可用');
-            } finally {
-                isExecuting = false;
-                executeBtn.disabled = false;
-                executeBtn.innerHTML = '▶️ 执行查询';
-            }
+            // 最后将换行符和制表符转换为HTML格式
+            return escapedText
+                .replace(/\n/g, '<br>')
+                .replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;');
         }
 
-        // 显示查询结果
+        // 简化的显示查询结果函数
         function displayResults(data, sql) {
             const resultsContainer = document.getElementById('resultsContainer');
 
+            // 处理错误状态
             if (data.status === 'error') {
                 showError(data.message, data.executionTimeMs);
                 return;
@@ -706,110 +678,117 @@
             }
 
             // 处理单条SQL执行结果
-            if (data.status === 'success') {
-                let html = '';
-
-                // 显示执行信息和时间
-                html += '<div class="result-meta">';
-                html += '<strong>执行成功</strong>';
-                html += ` | 查询语句：${escapeHtml(sql)}`;
-
-                if (data.rowCount !== undefined) {
-                    html += ` | 返回行数：${data.rowCount}`;
-                }
-
-                // 添加执行时间显示
-                if (data.executionTimeMs !== undefined) {
-                    html += ` | ${formatExecutionTime(data.executionTimeMs)}`;
-                }
-
-                html += '</div>';
-
-                // 显示数据表格
-                if (data.data && data.data.length > 0) {
-                    html += createDataTable(data.data);
-                } else if (data.message) {
-                    html += `<div class="success">${formatMessageText(data.message)}</div>`;
-                } else {
-                    html += '<div class="no-results">查询执行成功，但无返回数据</div>';
-                }
-
-                resultsContainer.innerHTML = html;
-            } else if (data.status === 'help') {
-                resultsContainer.innerHTML = `
-                    <div class="success">
-                        ${formatMessageText(data.message)}
-                    </div>
-                `;
-            } else if (data.status === 'partial') {
-                displayBatchResults(data, sql);
-            }
+            displaySingleResult(data, sql);
         }
 
-        // 显示批量执行结果
+        // 新增：处理单条SQL结果的函数
+        function displaySingleResult(data, sql) {
+            const resultsContainer = document.getElementById('resultsContainer');
+            let html = '';
+
+            // 显示执行信息
+            html += createResultMeta(data, sql);
+
+            // 显示数据或消息
+            if (data.data && data.data.length > 0) {
+                html += createDataTable(data.data);
+            } else if (data.message) {
+                html += `<div class="success">${formatMessageText(data.message)}</div>`;
+            } else {
+                html += '<div class="no-results">查询执行成功，但无返回数据</div>';
+            }
+
+            resultsContainer.innerHTML = html;
+        }
+
+        // 新增：创建结果元信息的函数
+        function createResultMeta(data, sql) {
+            let html = '<div class="result-meta">';
+            html += '<strong>执行成功</strong>';
+
+            if (sql && sql.length <= 100) {
+                html += ` | 查询语句：${escapeHtml(sql)}`;
+            }
+
+            if (data.rowCount !== undefined) {
+                html += ` | 返回行数：${data.rowCount}`;
+            }
+
+            if (data.executionTimeMs !== undefined) {
+                html += ` | ${formatExecutionTime(data.executionTimeMs)}`;
+            }
+
+            html += '</div>';
+            return html;
+        }
+
+        // 简化的批量结果显示函数
         function displayBatchResults(data, originalSql) {
             const resultsContainer = document.getElementById('resultsContainer');
             let html = '';
 
             // 显示批量执行摘要
-            const statusClass = data.status === 'success' ? 'success' :
-                data.status === 'error' ? 'error' : 'partial-success';
-
-            html += `<div class="batch-summary ${statusClass}">
-                <h4>📊 批量执行摘要</h4>
-                <div class="summary-stats">
-                    <span class="stat">总语句数：${data.totalStatements}</span>
-                    <span class="stat success-count">成功：${data.successCount}</span>
-                    ${data.errorCount > 0 ? `<span class="stat error-count">失败：${data.errorCount}</span>` : ''}
-                </div>
-                <div class="summary-message">${escapeHtml(data.message)}</div>
-                ${data.errors ? `<div class="error-summary">错误详情：${escapeHtml(data.errors)}</div>` : ''}
-            </div>`;
+            html += createBatchSummary(data);
 
             // 显示每个语句的结果
             if (data.results && data.results.length > 0) {
                 html += '<div class="statements-results">';
-
-                data.results.forEach((result, index) => {
-                    const statusIcon = result.status === 'success' || result.status === 'help' ? '✅' : '❌';
-                    const statusClass = result.status === 'success' || result.status === 'help' ? 'success' : 'error';
-
-                    html += `<div class="statement-result">
-                        <div class="statement-header ${statusClass}">
-                            <span class="statement-number">${statusIcon} 语句 ${result.statementIndex}</span>
-                            <span class="statement-status">${result.status.toUpperCase()}</span>
-                        </div>
-                        <div class="statement-sql">
-                            <code>${escapeHtml(result.sql)}</code>
-                        </div>`;
-
-                    if (result.status === 'success' || result.status === 'help') {
-                        if (result.data && result.data.length > 0) {
-                            html += `<div class="statement-meta">
-                                返回 ${result.rowCount || result.data.length} 行数据
-                            </div>`;
-                            html += createDataTable(result.data);
-                        } else if (result.message) {
-                            html += `<div class="statement-message success">
-                                ${formatMessageText(result.message)}
-                            </div>`;
-                        }
-                    } else {
-                        html += `<div class="statement-message error">
-                            ${formatMessageText(result.message)}
-                        </div>`;
-                    }
-
-                    html += '</div>';
+                data.results.forEach(result => {
+                    html += createStatementResult(result);
                 });
-
                 html += '</div>';
             }
 
             resultsContainer.innerHTML = html;
         }
 
-        // 创建数据表格
+        // 新增：创建批量摘要的函数
+        function createBatchSummary(data) {
+            const statusClass = data.status === 'success' ? 'success' :
+                data.status === 'error' ? 'error' : 'partial-success';
+
+            return `<div class="batch-summary ${statusClass}">
+                <h4>📊 批量执行摘要</h4>
+                <div class="summary-stats">
+                    <span class="stat">总语句数：${data.totalStatements}</span>
+                    <span class="stat success-count">成功：${data.successCount}</span>
+                    ${data.errorCount > 0 ? `<span class="stat error-count">失败：${data.errorCount}</span>` : ''}
+                </div>
+                <div class="summary-message">${formatMessageText(data.message)}</div>
+                ${data.errors ? `<div class="error-summary">错误详情：${formatMessageText(data.errors)}</div>` : ''}
+            </div>`;
+        }
+
+        // 新增：创建单个语句结果的函数
+        function createStatementResult(result) {
+            const statusIcon = (result.status === 'success' || result.status === 'help') ? '✅' : '❌';
+            const statusClass = (result.status === 'success' || result.status === 'help') ? 'success' : 'error';
+
+            let html = `<div class="statement-result">
+                <div class="statement-header ${statusClass}">
+                    <span class="statement-number">${statusIcon} 语句 ${result.statementIndex}</span>
+                    <span class="statement-status">${result.status.toUpperCase()}</span>
+                </div>
+                <div class="statement-sql">
+                    <code>${escapeHtml(result.sql)}</code>
+                </div>`;
+
+            if (result.status === 'success' || result.status === 'help') {
+                if (result.data && result.data.length > 0) {
+                    html += `<div class="statement-meta">返回 ${result.rowCount || result.data.length} 行数据</div>`;
+                    html += createDataTable(result.data);
+                } else if (result.message) {
+                    html += `<div class="statement-message success">${formatMessageText(result.message)}</div>`;
+                }
+            } else {
+                html += `<div class="statement-message error">${formatMessageText(result.message)}</div>`;
+            }
+
+            html += '</div>';
+            return html;
+        }
+
+        // 新增：创建数据表格的函数
         function createDataTable(data) {
             if (!data || data.length === 0) {
                 return '<div class="no-results">无数据</div>';
@@ -830,11 +809,10 @@
             data.forEach(row => {
                 html += '<tr>';
                 columns.forEach(col => {
-                    const value = row[col];
-                    const displayValue = value === null || value === undefined ?
-                        '<em style="color: #999;">null</em>' :
-                        escapeHtml(String(value));
-                    html += `<td>${displayValue}</td>`;
+                    const cellValue = row[col];
+                    const displayValue = cellValue === null || cellValue === undefined ?
+                        '(null)' : String(cellValue);
+                    html += `<td>${escapeHtml(displayValue)}</td>`;
                 });
                 html += '</tr>';
             });
@@ -856,14 +834,6 @@
             return div.innerHTML;
         }
 
-        // 处理包含换行符的文本，将其转换为HTML格式
-        function formatMessageText(text) {
-            if (!text) return '';
-            const escapedText = escapeHtml(text);
-            return escapedText.replace(/\n/g, '<br>')
-                .replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;');  // 将 \t 替换为四个空格
-        }
-
         // 常用 SQL 模板
         function insertSQLTemplate(template) {
             const sqlInput = document.getElementById('sqlInput');
@@ -874,7 +844,7 @@
         // 显示错误信息
         function showError(message, executionTime) {
             const resultsContainer = document.getElementById('resultsContainer');
-            let html = `<div class="error">❌ ${escapeHtml(message)}`;
+            let html = `<div class="error">❌ ${formatMessageText(message)}`;
 
             if (executionTime !== undefined) {
                 html += ` | ${formatExecutionTime(executionTime)}`;
@@ -901,6 +871,68 @@
             }
 
             return `<span class="${timeClass}">${timeText}</span>`;
+        }
+
+        // 简化的执行SQL函数
+        async function executeSQL() {
+            if (isExecuting) return;
+
+            const sql = getSQLInput();
+            if (!sql) {
+                showError('请输入 SQL 查询语句');
+                return;
+            }
+
+            try {
+                setExecutionState(true);
+                const data = await sendSQLRequest(sql);
+                displayResults(data, sql);
+                handlePostExecution(sql);
+            } catch (error) {
+                console.error('查询执行失败:', error);
+                showError('网络错误或服务器不可用');
+            } finally {
+                setExecutionState(false);
+            }
+        }
+
+        // 新增：获取SQL输入的函数
+        function getSQLInput() {
+            return document.getElementById('sqlInput').value.trim();
+        }
+
+        // 新增：设置执行状态的函数
+        function setExecutionState(executing) {
+            isExecuting = executing;
+            const executeBtn = document.getElementById('executeBtn');
+            executeBtn.disabled = executing;
+            executeBtn.innerHTML = executing ? '⏳ 执行中...' : '▶️ 执行查询';
+
+            if (executing) {
+                document.getElementById('resultsContainer').innerHTML = '<div class="loading">正在执行查询</div>';
+            }
+        }
+
+        // 新增：发送SQL请求的函数
+        async function sendSQLRequest(sql) {
+            const response = await fetch(API_BASE_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: `sql=${encodeURIComponent(sql)}`
+            });
+            return await response.json();
+        }
+
+        // 新增：处理执行后操作的函数
+        function handlePostExecution(sql) {
+            const lowerSql = sql.toLowerCase();
+            if (lowerSql.includes('create table') ||
+                lowerSql.includes('drop table') ||
+                lowerSql.includes('alter table')) {
+                setTimeout(loadTables, 500);
+            }
         }
     </script>
 </body>
