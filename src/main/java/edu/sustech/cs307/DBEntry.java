@@ -36,7 +36,42 @@ public class DBEntry {
     public static void printHelp() {
         Logger.info("Type 'exit' to exit the program.");
         Logger.info("Type 'help' to see this message again.");
+        Logger.info("Type 'SHOW BTREE <table_name> <column_name>;' to display B+ Tree structure.");
         Logger.info("HTTP API is available at http://localhost:" + HTTP_PORT + "?sql=<your_sql_query>");
+    }
+
+    /**
+     * 处理SHOW BTREE命令
+     */
+    private static void handleShowBTreeCommand(DBManager dbManager, String sql) {
+        try {
+            long startTime = System.nanoTime();
+
+            // 解析SHOW BTREE命令的参数
+            String[] parts = sql.trim().split("\\s+");
+
+            if (parts.length < 4) {
+                Logger.error("Usage: SHOW BTREE <table_name> <column_name>;");
+                return;
+            }
+            String tableName = parts[2].replace(";", "").trim();
+            String columnName = parts[3].replace(";", "").trim();
+            edu.sustech.cs307.logicalOperator.dml.ShowBTreeExecutor executor = new edu.sustech.cs307.logicalOperator.dml.ShowBTreeExecutor(
+                    tableName, columnName, dbManager);
+
+            executor.execute();
+            String displayResult = executor.getDisplayResult();
+            Logger.info(displayResult);
+
+            long endTime = System.nanoTime();
+            double executionTimeMs = (endTime - startTime) / 1_000_000.0;
+            Logger.info(String.format("Execution completed in %.2f ms", executionTimeMs));
+
+        } catch (DBException e) {
+            Logger.error("Database error: " + e.getMessage());
+        } catch (Exception e) {
+            Logger.error("Error displaying B+ Tree: " + e.getMessage());
+        }
     }
 
     public static void main(String[] args) throws DBException {
@@ -55,6 +90,13 @@ public class DBEntry {
             MetaManager metaManager = new MetaManager(DB_NAME + "/meta");
             dbManager = new DBManager(diskManager, bufferPool, recordManager, metaManager);
 
+            try {
+                Logger.info("Loading existing indexes...");
+                dbManager.getIndexManager().loadAllIndexes();
+                Logger.info("Index loading completed successfully");
+            } catch (DBException e) {
+                Logger.warn("Failed to load some indexes during startup: {}", e.getMessage());
+            }
             // Start HTTP server and wait for it to be ready
             httpServer = new HttpServer(HTTP_PORT, dbManager);
             final HttpServer finalHttpServer = httpServer;
@@ -155,6 +197,9 @@ public class DBEntry {
                         continue;
                     } else if (sql.equalsIgnoreCase("help;")) {
                         printHelp();
+                        continue;
+                    } else if (sql.trim().toUpperCase().startsWith("SHOW BTREE ")) {
+                        handleShowBTreeCommand(dbManager, sql);
                         continue;
                     }
                 } catch (Exception e) {

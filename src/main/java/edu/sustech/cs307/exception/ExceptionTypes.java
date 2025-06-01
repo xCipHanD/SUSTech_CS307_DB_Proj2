@@ -25,7 +25,8 @@ public enum ExceptionTypes {
     NOT_SUPPORTED_OPERATION,
     TYPE_MISMATCH,
     INVALID_OPERATION,
-    RECORD_NOT_FOUND;
+    RECORD_NOT_FOUND,
+    PRIMARY_KEY_VIOLATION;
 
     private String error_result;
 
@@ -178,6 +179,13 @@ public enum ExceptionTypes {
         RECORD_NOT_FOUND.SetErrorResult(
                 String.format("Record not found: %s", string));
         return RECORD_NOT_FOUND;
+    }
+
+    static public ExceptionTypes PrimaryKeyViolation(String tableName, String columnName, Object value) {
+        PRIMARY_KEY_VIOLATION.SetErrorResult(
+                String.format("Primary key constraint violation in table %s, column %s: duplicate value %s",
+                        tableName, columnName, value));
+        return PRIMARY_KEY_VIOLATION;
     }
 
 }

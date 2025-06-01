@@ -520,6 +520,22 @@
                 text-align: center;
             }
         }
+
+        .btree-display {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 10px;
+            overflow-x: auto;
+        }
+
+        .btree-structure {
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            white-space: pre;
+            word-wrap: normal;
+            color: #333;
+        }
     </style>
 </head>
 
@@ -554,7 +570,7 @@
                 <div class="sql-input-container">
                     <h3>💻 SQL 查询</h3>
                     <textarea class="sql-textarea" id="sqlInput"
-                        placeholder="请输入您的 SQL 查询语句...&#10;&#10;示例：&#10;SHOW TABLES;&#10;SELECT * FROM students;&#10;CREATE TABLE test (id INT, name CHAR);&#10;&#10;提示：使用 Ctrl+Enter 快速执行"></textarea>
+                        placeholder="请输入您的 SQL 查询语句...&#10;&#10;示例：&#10;SHOW TABLES;&#10;SELECT * FROM students;&#10;CREATE TABLE test (id INT, name CHAR);&#10;SHOW BTREE table_name column_name;&#10;&#10;提示：使用 Ctrl+Enter 快速执行"></textarea>
                 </div>
 
                 <div class="controls">
@@ -564,6 +580,17 @@
                     <button class="clear-btn" onclick="clearSQL()">
                         🗑️ 清空
                     </button>
+                    <div class="sql-templates">
+                        <select id="templateSelect" onchange="insertSQLTemplate()">
+                            <option value="">选择 SQL 模板...</option>
+                            <option value="SHOW TABLES;">显示所有表</option>
+                            <option value="DESC table_name;">描述表结构</option>
+                            <option value="SELECT * FROM table_name;">查询表数据</option>
+                            <option value="SHOW BTREE table_name column_name;">显示B+树结构</option>
+                            <option value="CREATE TABLE test_table (id INT, name CHAR);">创建测试表</option>
+                            <option value="INSERT INTO table_name VALUES (1, 'test');">插入数据</option>
+                        </select>
+                    </div>
                     <span class="shortcut-hint">快捷键：Ctrl + Enter</span>
                 </div>
             </div>
@@ -664,6 +691,17 @@
         // 简化的显示查询结果函数
         function displayResults(data, sql) {
             const resultsContainer = document.getElementById('resultsContainer');
+
+            // 检查是否是SHOW BTREE命令
+            if (sql && sql.trim().toUpperCase().startsWith('SHOW BTREE')) {
+                if (data.status === 'success') {
+                    displayBTreeResult(data, sql);
+                    return;
+                } else {
+                    showError(data.message, data.executionTimeMs);
+                    return;
+                }
+            }
 
             // 处理错误状态
             if (data.status === 'error') {
@@ -835,10 +873,23 @@
         }
 
         // 常用 SQL 模板
-        function insertSQLTemplate(template) {
-            const sqlInput = document.getElementById('sqlInput');
-            sqlInput.value = template;
-            sqlInput.focus();
+        function insertSQLTemplate() {
+            const select = document.getElementById('templateSelect');
+            const template = select.value;
+            if (template) {
+                const sqlInput = document.getElementById('sqlInput');
+                sqlInput.value = template;
+                sqlInput.focus();
+
+                // 如果是SHOW BTREE模板，将光标定位到table_name处
+                if (template.includes('SHOW BTREE')) {
+                    const tableNameStart = template.indexOf('table_name');
+                    sqlInput.setSelectionRange(tableNameStart, tableNameStart + 'table_name'.length);
+                }
+
+                // 重置选择器
+                select.value = '';
+            }
         }
 
         // 显示错误信息
@@ -933,6 +984,27 @@
                 lowerSql.includes('alter table')) {
                 setTimeout(loadTables, 500);
             }
+        }
+
+        // 新增：专门处理B+树结果显示的函数
+        function displayBTreeResult(data, sql) {
+            const resultsContainer = document.getElementById('resultsContainer');
+            let html = '';
+
+            // 显示执行信息
+            html += createResultMeta(data, sql);
+
+            // B+树结果通常在message中包含树的文本表示
+            if (data.message) {
+                html += `<div class="btree-display">
+                    <h4>🌳 B+ Tree 结构</h4>
+                    <pre class="btree-structure">${escapeHtml(data.message)}</pre>
+                </div>`;
+            } else {
+                html += '<div class="no-results">未获取到B+树结构信息</div>';
+            }
+
+            resultsContainer.innerHTML = html;
         }
     </script>
 </body>

@@ -355,8 +355,10 @@ public class HttpServer {
             try {
                 JSqlParser parser = new CCJSqlParserManager();
                 Statement stmt = parser.parse(new StringReader(sql));
-
                 // 使用JSQLParser识别语句类型并处理
+                if (sql.toUpperCase().startsWith("SHOW BTREE ")) {
+                    return handleShowBTree(sql);
+                }
                 if (stmt instanceof ShowTablesStatement) {
                     return handleShowTables();
                 } else if (stmt instanceof DescribeStatement) {
@@ -411,6 +413,7 @@ public class HttpServer {
                             "- SHOW TABLES; - List all tables\n" +
                             "- DESC <table_name>; - Describe table structure\n" +
                             "- EXPLAIN <query>; - Show query execution plan\n" +
+                            "- SHOW BTREE <table_name> <column_name>; - Display B+ Tree structure\n" +
                             "- SELECT/INSERT/UPDATE/DELETE statements\n" +
                             "- CREATE/DROP TABLE statements");
             return response;
@@ -626,6 +629,51 @@ public class HttpServer {
                 return trimmedSql.substring(9).trim().replace(";", "");
             }
             return "";
+        }
+
+        /**
+         * 处理SHOW BTREE命令
+         */
+        private Map<String, Object> handleShowBTree(String sql) {
+            Map<String, Object> response = new LinkedHashMap<>();
+
+            try {
+                // 解析SHOW BTREE命令的参数
+                String upperSql = sql.trim().toUpperCase();
+                String[] parts = sql.trim().split("\\s+");
+
+                if (parts.length < 4) {
+                    response.put("status", "error");
+                    response.put("message", "Usage: SHOW BTREE <table_name> <column_name>;");
+                    return response;
+                }
+
+                String tableName = parts[2].replace(";", "").trim();
+                String columnName = parts[3].replace(";", "").trim();
+
+                // 使用ShowBTreeExecutor执行命令
+                edu.sustech.cs307.logicalOperator.dml.ShowBTreeExecutor executor = new edu.sustech.cs307.logicalOperator.dml.ShowBTreeExecutor(
+                        tableName, columnName, dbManager);
+
+                executor.execute();
+
+                // 获取格式化的显示结果
+                String displayResult = executor.getDisplayResult();
+
+                response.put("status", "success");
+                response.put("message", displayResult);
+                response.put("data", new ArrayList<>());
+                response.put("rowCount", 0);
+
+            } catch (DBException e) {
+                response.put("status", "error");
+                response.put("message", "Database error: " + e.getMessage());
+            } catch (Exception e) {
+                response.put("status", "error");
+                response.put("message", "Error displaying B+ Tree: " + e.getMessage());
+            }
+
+            return response;
         }
 
         private void sendJsonResponse(ChannelHandlerContext ctx, Map<String, Object> data, HttpResponseStatus status) {

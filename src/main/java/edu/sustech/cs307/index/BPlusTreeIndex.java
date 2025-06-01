@@ -261,24 +261,35 @@ public class BPlusTreeIndex implements Index {
 
         boolean deleted = deleteRecursive(root, key, rid);
 
-        // If root is internal and has no keys, make its only child the new root
-        if (!root.isLeaf && root.keys.isEmpty() && !root.children.isEmpty()) {
-            root = root.children.get(0);
-        }
-
-        // If root is leaf and empty, set to null
-        if (root.isLeaf && root.keys.isEmpty()) {
-            root = null;
+        // 删除后的根节点调整
+        if (root != null) {
+            // 如果根是内部节点且只有一个子节点，将该子节点提升为新根
+            if (!root.isLeaf && root.children.size() == 1) {
+                root = root.children.get(0);
+                Logger.debug("Root promoted: new root has {} keys", root.keys.size());
+            }
+            // 如果根是内部节点且没有键，说明所有子节点都被合并了
+            else if (!root.isLeaf && root.keys.isEmpty() && root.children.isEmpty()) {
+                root = null;
+                Logger.debug("Root became empty internal node, set to null");
+            }
+            // 如果根是叶子节点且为空，设置为null
+            else if (root.isLeaf && root.keys.isEmpty()) {
+                root = null;
+                Logger.debug("Root became empty leaf node, set to null");
+            }
         }
 
         if (!deleted) {
             Logger.warn("Key {} with RID {} not found for deletion in B+ Tree", key, rid);
+        } else {
+            Logger.debug("Successfully deleted key {} with RID {} from B+ Tree", key, rid);
         }
     }
 
     private boolean deleteRecursive(BPlusTreeNode node, Value key, RID rid) throws DBException {
         if (node.isLeaf) {
-            // Find and remove the key-RID pair from leaf
+            // 在叶子节点中查找并删除键值对
             for (int i = 0; i < node.keys.size(); i++) {
                 if (ValueComparer.compare(node.keys.get(i), key) == 0 &&
                         node.rids.get(i).equals(rid)) {
@@ -289,14 +300,221 @@ public class BPlusTreeIndex implements Index {
             }
             return false;
         } else {
-            // Internal node: find child to traverse
+            // 内部节点：查找要遍历的子节点
             int childIndex = node.findChildPointerIndex(key);
             if (childIndex >= node.children.size()) {
                 childIndex = node.children.size() - 1;
             }
 
-            return deleteRecursive(node.children.get(childIndex), key, rid);
+            BPlusTreeNode child = node.children.get(childIndex);
+            boolean deleted = deleteRecursive(child, key, rid);
+
+            if (deleted) {
+                // 删除成功后，检查子节点是否需要清理
+                handleNodeAfterDeletion(node, childIndex);
+            }
+
+            return deleted;
         }
+    }
+
+    /**
+     * 处理删除操作后的节点调整
+     */
+    private void handleNodeAfterDeletion(BPlusTreeNode parent, int childIndex) throws DBException {
+        if (childIndex >= parent.children.size()) {
+            return;
+        }
+
+        BPlusTreeNode child = parent.children.get(childIndex);
+
+        // 如果子节点是空的叶子节点，需要将其从父节点中移除
+        if (child.isLeaf && child.keys.isEmpty()) {
+            removeChildFromParent(parent, childIndex);
+        }
+        // 如果子节点是内部节点且没有子节点，也需要移除
+        else if (!child.isLeaf && child.children.isEmpty()) {
+            removeChildFromParent(parent, childIndex);
+        }
+        // 如果子节点的键数量过少（小于最小度数），尝试合并或重分布
+        else if (shouldRebalance(child)) {
+            rebalanceNode(parent, childIndex);
+        }
+    }
+
+    /**
+     * 从父节点中移除指定的子节点
+     */
+    private void removeChildFromParent(BPlusTreeNode parent, int childIndex) throws DBException {
+        // 移除子节点
+        parent.children.remove(childIndex);
+
+        // 调整父节点的键
+        if (childIndex > 0 && childIndex <= parent.keys.size()) {
+            // 移除对应的分隔键
+            parent.keys.remove(childIndex - 1);
+        } else if (childIndex == 0 && !parent.keys.isEmpty()) {
+            // 如果移除的是第一个子节点，移除第一个键
+            parent.keys.remove(0);
+        }
+
+        // 如果父节点变成空的内部节点但不是根节点，这会在上层递归中处理
+    }
+
+    /**
+     * 检查节点是否需要重平衡
+     */
+    private boolean shouldRebalance(BPlusTreeNode node) {
+        if (node == root) {
+            return false; // 根节点不需要重平衡
+        }
+
+        int minKeys = (degree - 1) / 2;
+        return node.keys.size() < minKeys;
+    }
+
+    /**
+     * 重平衡节点（简化版本：如果节点键数过少，尝试从兄弟节点借键或合并）
+     */
+    private void rebalanceNode(BPlusTreeNode parent, int childIndex) throws DBException {
+        BPlusTreeNode node = parent.children.get(childIndex);
+
+        // 尝试从左兄弟借键
+        if (childIndex > 0) {
+            BPlusTreeNode leftSibling = parent.children.get(childIndex - 1);
+            if (leftSibling.keys.size() > (degree - 1) / 2) {
+                borrowFromLeftSibling(parent, childIndex);
+                return;
+            }
+        }
+
+        // 尝试从右兄弟借键
+        if (childIndex < parent.children.size() - 1) {
+            BPlusTreeNode rightSibling = parent.children.get(childIndex + 1);
+            if (rightSibling.keys.size() > (degree - 1) / 2) {
+                borrowFromRightSibling(parent, childIndex);
+                return;
+            }
+        }
+
+        // 如果无法借键，尝试合并
+        if (childIndex > 0) {
+            // 与左兄弟合并
+            mergeWithLeftSibling(parent, childIndex);
+        } else if (childIndex < parent.children.size() - 1) {
+            // 与右兄弟合并
+            mergeWithRightSibling(parent, childIndex);
+        }
+    }
+
+    /**
+     * 从左兄弟借键
+     */
+    private void borrowFromLeftSibling(BPlusTreeNode parent, int nodeIndex) throws DBException {
+        BPlusTreeNode node = parent.children.get(nodeIndex);
+        BPlusTreeNode leftSibling = parent.children.get(nodeIndex - 1);
+
+        if (node.isLeaf) {
+            // 叶子节点：直接移动键和RID
+            Value borrowedKey = leftSibling.keys.remove(leftSibling.keys.size() - 1);
+            RID borrowedRid = leftSibling.rids.remove(leftSibling.rids.size() - 1);
+
+            node.keys.add(0, borrowedKey);
+            node.rids.add(0, borrowedRid);
+
+            // 更新父节点的分隔键
+            parent.keys.set(nodeIndex - 1, borrowedKey);
+        } else {
+            // 内部节点：需要通过父节点移动键
+            Value parentKey = parent.keys.get(nodeIndex - 1);
+            Value borrowedKey = leftSibling.keys.remove(leftSibling.keys.size() - 1);
+            BPlusTreeNode borrowedChild = leftSibling.children.remove(leftSibling.children.size() - 1);
+
+            node.keys.add(0, parentKey);
+            node.children.add(0, borrowedChild);
+
+            parent.keys.set(nodeIndex - 1, borrowedKey);
+        }
+    }
+
+    /**
+     * 从右兄弟借键
+     */
+    private void borrowFromRightSibling(BPlusTreeNode parent, int nodeIndex) throws DBException {
+        BPlusTreeNode node = parent.children.get(nodeIndex);
+        BPlusTreeNode rightSibling = parent.children.get(nodeIndex + 1);
+
+        if (node.isLeaf) {
+            // 叶子节点：直接移动键和RID
+            Value borrowedKey = rightSibling.keys.remove(0);
+            RID borrowedRid = rightSibling.rids.remove(0);
+
+            node.keys.add(borrowedKey);
+            node.rids.add(borrowedRid);
+
+            // 更新父节点的分隔键
+            if (!rightSibling.keys.isEmpty()) {
+                parent.keys.set(nodeIndex, rightSibling.keys.get(0));
+            }
+        } else {
+            // 内部节点：需要通过父节点移动键
+            Value parentKey = parent.keys.get(nodeIndex);
+            Value borrowedKey = rightSibling.keys.remove(0);
+            BPlusTreeNode borrowedChild = rightSibling.children.remove(0);
+
+            node.keys.add(parentKey);
+            node.children.add(borrowedChild);
+
+            parent.keys.set(nodeIndex, borrowedKey);
+        }
+    }
+
+    /**
+     * 与左兄弟合并
+     */
+    private void mergeWithLeftSibling(BPlusTreeNode parent, int nodeIndex) throws DBException {
+        BPlusTreeNode node = parent.children.get(nodeIndex);
+        BPlusTreeNode leftSibling = parent.children.get(nodeIndex - 1);
+
+        if (node.isLeaf) {
+            // 叶子节点合并
+            leftSibling.keys.addAll(node.keys);
+            leftSibling.rids.addAll(node.rids);
+            leftSibling.nextLeaf = node.nextLeaf;
+        } else {
+            // 内部节点合并
+            leftSibling.keys.add(parent.keys.get(nodeIndex - 1));
+            leftSibling.keys.addAll(node.keys);
+            leftSibling.children.addAll(node.children);
+        }
+
+        // 从父节点移除合并的节点和分隔键
+        parent.children.remove(nodeIndex);
+        parent.keys.remove(nodeIndex - 1);
+    }
+
+    /**
+     * 与右兄弟合并
+     */
+    private void mergeWithRightSibling(BPlusTreeNode parent, int nodeIndex) throws DBException {
+        BPlusTreeNode node = parent.children.get(nodeIndex);
+        BPlusTreeNode rightSibling = parent.children.get(nodeIndex + 1);
+
+        if (node.isLeaf) {
+            // 叶子节点合并
+            node.keys.addAll(rightSibling.keys);
+            node.rids.addAll(rightSibling.rids);
+            node.nextLeaf = rightSibling.nextLeaf;
+        } else {
+            // 内部节点合并
+            node.keys.add(parent.keys.get(nodeIndex));
+            node.keys.addAll(rightSibling.keys);
+            node.children.addAll(rightSibling.children);
+        }
+
+        // 从父节点移除合并的节点和分隔键
+        parent.children.remove(nodeIndex + 1);
+        parent.keys.remove(nodeIndex);
     }
 
     @Override
@@ -558,6 +776,57 @@ public class BPlusTreeIndex implements Index {
                 printNode(child, level + 1);
             }
         }
+    }
+
+    /**
+     * 获取树结构的字符串表示
+     */
+    public String getTreeString() {
+        if (root == null) {
+            return "Empty tree";
+        }
+        return getNodeString(root, 0);
+    }
+
+    /**
+     * 递归生成节点的字符串表示
+     */
+    private String getNodeString(BPlusTreeNode node, int level) {
+        if (node == null)
+            return "";
+
+        StringBuilder result = new StringBuilder();
+        String indent = "  ".repeat(level);
+
+        // 构建节点信息
+        result.append(indent);
+        if (level == 0) {
+            result.append("🌳 Root ");
+        }
+        result.append(node.isLeaf ? "📄 Leaf: " : "📁 Internal: ");
+
+        // 显示键值
+        for (int i = 0; i < node.keys.size(); i++) {
+            result.append(node.keys.get(i));
+            if (node.isLeaf && node.rids != null && i < node.rids.size()) {
+                result.append("(").append(node.rids.get(i)).append(")");
+            }
+            if (i < node.keys.size() - 1) {
+                result.append(", ");
+            }
+        }
+        result.append("\n");
+
+        // 递归处理子节点
+        if (!node.isLeaf && node.children != null) {
+            for (int i = 0; i < node.children.size(); i++) {
+                BPlusTreeNode child = node.children.get(i);
+                result.append(indent).append("├─ Child ").append(i).append(":\n");
+                result.append(getNodeString(child, level + 1));
+            }
+        }
+
+        return result.toString();
     }
 
     /**

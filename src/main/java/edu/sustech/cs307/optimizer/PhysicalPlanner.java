@@ -24,7 +24,6 @@ import net.sf.jsqlparser.statement.select.Values;
 import org.pmw.tinylog.Logger;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 
 public class PhysicalPlanner {
@@ -372,7 +371,7 @@ public class PhysicalPlanner {
         }
 
         return new UpdateOperator(scanner, logicalUpdateOp.getTableName(),
-                logicalUpdateOp.getUpdateSets(), logicalUpdateOp.getExpression());
+                logicalUpdateOp.getUpdateSets(), logicalUpdateOp.getExpression(), dbManager);
     }
 
     private static PhysicalOperator handleOrderBy(DBManager dbManager, LogicalOrderByOperator orderByOperator)

@@ -17,6 +17,8 @@ import edu.sustech.cs307.value.ValueType;
 import org.pmw.tinylog.Logger;
 
 import java.util.Map;
+import java.util.Set;
+import java.util.HashMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class IndexManager {
@@ -48,6 +50,13 @@ public class IndexManager {
      *                     fails.
      */
     public synchronized Index createIndex(String tableName, String columnName) throws DBException {
+
+        Index existingIndex = getIndex(tableName, columnName);
+        if (existingIndex != null) {
+            Logger.info("Index for {}.{} already exists, returning existing index", tableName, columnName);
+            return existingIndex;
+        }
+
         TableMeta tableMeta = metaManager.getTable(tableName);
         if (tableMeta == null) {
             throw new DBException(ExceptionTypes.TableDoesNotExist(tableName));
@@ -66,6 +75,18 @@ public class IndexManager {
         Index index = new BPlusTreeIndex(tableName, columnName, degree);
 
         indexes.computeIfAbsent(tableName, k -> new ConcurrentHashMap<>()).put(columnName, index);
+
+        if (tableMeta.getIndexes() == null) {
+            tableMeta.setIndexes(new HashMap<>());
+        }
+        tableMeta.getIndexes().put(columnName, TableMeta.IndexType.BTREE);
+
+        try {
+            metaManager.saveToJson();
+        } catch (DBException e) {
+            Logger.warn("Failed to save metadata after index creation: {}", e.getMessage());
+        }
+
         Logger.info("Created B+Tree index for {}.{} with degree {}", tableName, columnName, degree);
 
         // 立即填充现有数据到索引中
@@ -184,6 +205,16 @@ public class IndexManager {
             if (tableIndexes.isEmpty()) {
                 indexes.remove(tableName);
             }
+            try {
+                TableMeta tableMeta = metaManager.getTable(tableName);
+                if (tableMeta != null && tableMeta.getIndexes() != null) {
+                    tableMeta.getIndexes().remove(columnName);
+                    metaManager.saveToJson();
+                }
+            } catch (DBException e) {
+                Logger.warn("Failed to update metadata after dropping index: {}", e.getMessage());
+            }
+
             Logger.info("Dropped index for {}.{}", tableName, columnName);
             return true;
         }
@@ -192,33 +223,60 @@ public class IndexManager {
     }
 
     /**
+     * 删除指定表的所有索引
+     *
+     * @param tableName 表名
+     * @return 删除的索引数量
+     */
+    public synchronized int dropAllIndexesForTable(String tableName) {
+        Map<String, Index> tableIndexes = indexes.get(tableName);
+        if (tableIndexes != null) {
+            int indexCount = tableIndexes.size();
+            tableIndexes.clear();
+            indexes.remove(tableName);
+            Logger.info("Dropped all {} indexes for table {}", indexCount, tableName);
+            return indexCount;
+        }
+        Logger.info("No indexes found for table {}", tableName);
+        return 0;
+    }
+
+    /**
      * Loads all indexes defined in the metadata.
      * This would typically be called at DB startup.
-     * (Conceptual - needs TableMeta to store index definitions)
      */
     public void loadAllIndexes() throws DBException {
-        // For each table in metaManager.getAllTables()...
-        // For each column in tableMeta.getIndexedColumns()...
-        // createIndex(tableName, columnName);
-        // This requires TableMeta to store information about which columns are indexed.
-        Logger.info("IndexManager: loadAllIndexes() called (conceptual).");
-        // Example: if TableMeta had a method getIndexesInfo() -> Map<String, IndexType>
-        // for (String tableName : metaManager.getAllTableNames()) { // Assuming
-        // metaManager has this
-        // TableMeta tableMeta = metaManager.getTable(tableName);
-        // if (tableMeta != null && tableMeta.getIndexes() != null) { // Assuming
-        // getIndexes returns map of colName to IndexMeta
-        // for (String columnName : tableMeta.getIndexes().keySet()) {
-        // // Potentially load existing index data from disk if persistent
-        // // For now, just creating new in-memory ones
-        // if (getIndex(tableName, columnName) == null) { // Avoid re-creating if
-        // already loaded by other means
-        // Logger.info("Auto-creating index for {}.{} based on metadata.", tableName,
-        // columnName);
-        // createIndex(tableName, columnName); // Uses default B+Tree for now
-        // }
-        // }
-        // }
-        // }
+        Logger.info("Loading all indexes from metadata...");
+
+        Set<String> tableNames = metaManager.getTableNames();
+        int totalIndexesLoaded = 0;
+
+        for (String tableName : tableNames) {
+            try {
+                TableMeta tableMeta = metaManager.getTable(tableName);
+                if (tableMeta != null && tableMeta.getIndexes() != null) {
+                    Map<String, TableMeta.IndexType> tableIndexes = tableMeta.getIndexes();
+
+                    for (String columnName : tableIndexes.keySet()) {
+                        if (getIndex(tableName, columnName) == null) {
+                            try {
+                                Index index = createIndex(tableName, columnName);
+                                Logger.info("Auto-loaded index for {}.{} based on metadata", tableName, columnName);
+                                totalIndexesLoaded++;
+                            } catch (DBException e) {
+                                Logger.error("Failed to load index for {}.{}: {}", tableName, columnName,
+                                        e.getMessage());
+                            }
+                        } else {
+                            Logger.debug("Index for {}.{} already exists, skipping", tableName, columnName);
+                        }
+                    }
+                }
+            } catch (DBException e) {
+                Logger.error("Failed to load indexes for table {}: {}", tableName, e.getMessage());
+            }
+        }
+
+        Logger.info("Completed loading indexes. Total loaded: {}", totalIndexesLoaded);
     }
 }

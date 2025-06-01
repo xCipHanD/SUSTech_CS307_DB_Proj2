@@ -4,7 +4,12 @@ import edu.sustech.cs307.exception.DBException;
 import edu.sustech.cs307.exception.ExceptionTypes;
 import edu.sustech.cs307.meta.ColumnMeta;
 import edu.sustech.cs307.meta.TabCol;
+import edu.sustech.cs307.meta.TableMeta;
 import edu.sustech.cs307.record.RecordFileHandle;
+import edu.sustech.cs307.record.RID;
+import edu.sustech.cs307.record.Record;
+import edu.sustech.cs307.system.DBManager;
+import edu.sustech.cs307.system.IndexSynchronizer;
 import edu.sustech.cs307.tuple.TableTuple;
 import edu.sustech.cs307.tuple.TempTuple;
 import edu.sustech.cs307.tuple.Tuple;
@@ -27,12 +32,13 @@ public class UpdateOperator implements PhysicalOperator {
     private final String tableName;
     private final List<UpdateSet> updateSetList;
     private final Expression whereExpr;
+    private final DBManager dbManager;
 
     private int updateCount;
     private boolean isDone;
 
     public UpdateOperator(PhysicalOperator inputOperator, String tableName, List<UpdateSet> updateSetList,
-            Expression whereExpr) {
+            Expression whereExpr, DBManager dbManager) {
         // UpdateOperator 现在可以接受 SeqScanOperator 或 FilterOperator 作为输入
         if (inputOperator instanceof SeqScanOperator seqScanOperator) {
             this.seqScanOperator = seqScanOperator;
@@ -53,6 +59,7 @@ public class UpdateOperator implements PhysicalOperator {
         this.tableName = tableName;
         this.updateSetList = updateSetList;
         this.whereExpr = whereExpr;
+        this.dbManager = dbManager;
         this.updateCount = 0;
         this.isDone = false;
     }
@@ -79,14 +86,30 @@ public class UpdateOperator implements PhysicalOperator {
         seqScanOperator.Begin();
         RecordFileHandle fileHandle = seqScanOperator.getFileHandle();
 
+        // 获取表元数据和主键信息
+        var tableMeta = dbManager.getMetaManager().getTable(tableName);
+        String primaryKeyColumn = tableMeta.getPrimaryKeyColumn();
+
+        // 获取索引同步器
+        IndexSynchronizer indexSynchronizer = new IndexSynchronizer(
+                dbManager.getIndexManager(),
+                dbManager.getMetaManager());
+
         while (seqScanOperator.hasNext()) {
             seqScanOperator.Next();
             TableTuple tuple = (TableTuple) seqScanOperator.Current();
 
             if (whereExpr == null || tuple.eval_expr(whereExpr)) {
+                // 获取更新前的记录用于索引同步
+                Record oldRecord = fileHandle.GetRecord(tuple.getRID());
+
                 Value[] oldValues = tuple.getValues();
                 List<Value> newValues = new ArrayList<>(Arrays.asList(oldValues));
                 TabCol[] schema = tuple.getTupleSchema();
+
+                // 记录主键是否被更新以及新的主键值
+                boolean primaryKeyUpdated = false;
+                Value newPrimaryKeyValue = null;
 
                 for (UpdateSet currentUpdateSet : this.updateSetList) {
                     List<Column> columnsToUpdate = currentUpdateSet.getColumns();
@@ -135,16 +158,121 @@ public class UpdateOperator implements PhysicalOperator {
                         Value newValue = tuple.evaluateExpressionWithTypeHint(expression, targetTable,
                                 targetColumnName);
                         newValues.set(index, newValue);
+
+                        // 检查是否更新了主键列
+                        if (primaryKeyColumn != null && targetColumnName.equalsIgnoreCase(primaryKeyColumn)) {
+                            primaryKeyUpdated = true;
+                            newPrimaryKeyValue = newValue;
+                        }
                     }
                 }
+
+                // 如果主键被更新，检查新的主键值是否与其他记录冲突
+                if (primaryKeyUpdated && newPrimaryKeyValue != null) {
+                    if (checkPrimaryKeyConflictForUpdate(tableMeta, primaryKeyColumn, newPrimaryKeyValue,
+                            tuple.getRID())) {
+                        throw new DBException(ExceptionTypes.PrimaryKeyViolation(
+                                tableName, primaryKeyColumn, newPrimaryKeyValue.toString()));
+                    }
+                }
+
                 ByteBuf buffer = Unpooled.buffer();
                 for (Value v : newValues) {
                     buffer.writeBytes(v.ToByte());
                 }
 
                 fileHandle.UpdateRecord(tuple.getRID(), buffer);
+
+                // 获取更新后的记录用于索引同步
+                Record newRecord = fileHandle.GetRecord(tuple.getRID());
+
+                // 同步更新所有相关索引
+                try {
+                    indexSynchronizer.onRecordUpdated(tableName, oldRecord, newRecord, tuple.getRID());
+                } catch (DBException e) {
+                    org.pmw.tinylog.Logger.warn("Failed to update indexes after update: {}", e.getMessage());
+                    // 继续执行，不因为索引更新失败而中断更新操作
+                }
+
                 updateCount++;
             }
+        }
+    }
+
+    /**
+     * 检查UPDATE操作中的主键冲突
+     * 
+     * @param tableMeta          表元数据
+     * @param primaryKeyColumn   主键列名
+     * @param newPrimaryKeyValue 新的主键值
+     * @param currentRID         当前记录的RID（用于排除自身）
+     * @return 如果存在冲突返回true，否则返回false
+     */
+    private boolean checkPrimaryKeyConflictForUpdate(TableMeta tableMeta, String primaryKeyColumn,
+            Value newPrimaryKeyValue, RID currentRID) throws DBException {
+        try {
+            // 使用索引查找是否存在相同的主键值
+            var indexManager = dbManager.getIndexManager();
+            var index = indexManager.getIndex(tableMeta.tableName, primaryKeyColumn);
+
+            if (index != null) {
+                // 使用索引查找
+                var matchingRIDs = index.search(newPrimaryKeyValue);
+                if (matchingRIDs != null) {
+                    // 检查找到的RID是否不是当前记录的RID
+                    for (var rid : matchingRIDs) {
+                        if (!rid.equals(currentRID)) {
+                            return true; // 发现与其他记录的冲突
+                        }
+                    }
+                }
+                return false;
+            } else {
+                // 如果没有索引，使用全表扫描检查主键冲突
+                return checkPrimaryKeyConflictByTableScanForUpdate(tableMeta, primaryKeyColumn, newPrimaryKeyValue,
+                        currentRID);
+            }
+        } catch (Exception e) {
+            // 如果索引查找失败，回退到全表扫描
+            return checkPrimaryKeyConflictByTableScanForUpdate(tableMeta, primaryKeyColumn, newPrimaryKeyValue,
+                    currentRID);
+        }
+    }
+
+    /**
+     * 通过全表扫描检查UPDATE操作中的主键冲突
+     */
+    private boolean checkPrimaryKeyConflictByTableScanForUpdate(TableMeta tableMeta, String primaryKeyColumn,
+            Value newPrimaryKeyValue, RID currentRID) throws DBException {
+        try {
+            var seqScan = new SeqScanOperator(tableMeta.tableName, dbManager);
+            seqScan.Begin();
+
+            ColumnMeta primaryKeyMeta = tableMeta.getColumnMeta(primaryKeyColumn);
+            if (primaryKeyMeta == null) {
+                return false;
+            }
+
+            while (seqScan.hasNext()) {
+                seqScan.Next();
+                var tuple = seqScan.Current();
+                if (tuple instanceof TableTuple tableTuple) {
+                    // 排除当前正在更新的记录
+                    if (!tableTuple.getRID().equals(currentRID)) {
+                        var tabCol = new edu.sustech.cs307.meta.TabCol(tableMeta.tableName, primaryKeyColumn);
+                        Value existingValue = tuple.getValue(tabCol);
+                        if (existingValue != null && existingValue.equals(newPrimaryKeyValue)) {
+                            seqScan.Close();
+                            return true; // 发现冲突
+                        }
+                    }
+                }
+            }
+            seqScan.Close();
+            return false; // 没有冲突
+        } catch (Exception e) {
+            throw new DBException(ExceptionTypes
+                    .InvalidOperation("Failed to check primary key conflict during update: " + e.getMessage()));
         }
     }
 

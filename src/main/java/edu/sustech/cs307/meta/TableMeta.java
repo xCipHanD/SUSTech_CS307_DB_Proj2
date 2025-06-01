@@ -2,6 +2,7 @@ package edu.sustech.cs307.meta;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import edu.sustech.cs307.exception.DBException;
 import edu.sustech.cs307.exception.ExceptionTypes;
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -10,6 +11,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class TableMeta {
     public String tableName;
     public ArrayList<ColumnMeta> columns_list;
@@ -90,6 +92,32 @@ public class TableMeta {
 
     public boolean hasColumn(String columnName) {
         return this.columns.containsKey(columnName);
+    }
+
+    /**
+     * 获取表的主键列名
+     * 注：当前实现中，主键列通常是第一个建立索引的列
+     * 
+     * @return 主键列名，如果没有主键则返回null
+     */
+    public String getPrimaryKeyColumn() {
+        if (indexes == null || indexes.isEmpty()) {
+            return null;
+        }
+        // 返回第一个索引列作为主键列
+        // 在当前实现中，主键列就是有索引的列
+        return indexes.keySet().iterator().next();
+    }
+
+    /**
+     * 检查指定列是否为主键列
+     * 
+     * @param columnName 列名
+     * @return 如果是主键列返回true，否则返回false
+     */
+    public boolean isPrimaryKey(String columnName) {
+        String primaryKeyColumn = getPrimaryKeyColumn();
+        return primaryKeyColumn != null && primaryKeyColumn.equals(columnName);
     }
 
     public Map<String, IndexType> getIndexes() {
