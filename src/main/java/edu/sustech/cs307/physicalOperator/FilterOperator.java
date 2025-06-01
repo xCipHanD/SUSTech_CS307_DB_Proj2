@@ -24,8 +24,12 @@ public class FilterOperator implements PhysicalOperator {
 
     public FilterOperator(PhysicalOperator child, Collection<Expression> whereExpr) {
         this.child = child;
-        // 只使用第一个表达式，简化逻辑
-        this.whereExpr = whereExpr.iterator().next();
+        // 检查集合是否为空
+        if (whereExpr == null || whereExpr.isEmpty()) {
+            this.whereExpr = null;
+        } else {
+            this.whereExpr = whereExpr.iterator().next();
+        }
     }
 
     @Override

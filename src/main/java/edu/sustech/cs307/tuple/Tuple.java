@@ -46,51 +46,70 @@ public abstract class Tuple {
 
         try {
             if (leftExpr instanceof Column leftColumn) {
-                // get table name
-                String table_name = leftColumn.getTableName();
-                if (tuple instanceof TableTuple) {
-                    TableTuple tableTuple = (TableTuple) tuple;
-                    table_name = tableTuple.getTableName();
+                String tableName = leftColumn.getTableName();
+                String columnName = leftColumn.getColumnName();
+                
+                // 如果表名为空，从schema中查找正确的表名
+                if (tableName == null) {
+                    TabCol[] schema = getTupleSchema();
+                    for (TabCol tc : schema) {
+                        if (tc.getColumnName().equals(columnName)) {
+                            tableName = tc.getTableName();
+                            break;
+                        }
+                    }
                 }
-                leftValue = tuple.getValue(new TabCol(table_name, leftColumn.getColumnName()));
-                if (leftValue.type == ValueType.CHAR) {
-                    leftValue = new Value(leftValue.toString());
+                
+                if (tableName != null) {
+                    leftValue = tuple.getValue(new TabCol(tableName, columnName));
+                    if (leftValue != null && leftValue.type == ValueType.CHAR) {
+                        leftValue = new Value(leftValue.toString());
+                    }
                 }
             } else {
-                leftValue = getConstantValue(leftExpr); // Handle constant left value
+                leftValue = getConstantValue(leftExpr);
             }
 
             if (rightExpr instanceof Column rightColumn) {
-                // get table name
-                String table_name = rightColumn.getTableName();
-                if (tuple instanceof TableTuple) {
-                    TableTuple tableTuple = (TableTuple) tuple;
-                    table_name = tableTuple.getTableName();
+                String tableName = rightColumn.getTableName();
+                String columnName = rightColumn.getColumnName();
+                
+                // 如果表名为空，从schema中查找正确的表名
+                if (tableName == null) {
+                    TabCol[] schema = getTupleSchema();
+                    for (TabCol tc : schema) {
+                        if (tc.getColumnName().equals(columnName)) {
+                            tableName = tc.getTableName();
+                            break;
+                        }
+                    }
                 }
-                rightValue = tuple.getValue(new TabCol(table_name, rightColumn.getColumnName()));
+                
+                if (tableName != null) {
+                    rightValue = tuple.getValue(new TabCol(tableName, columnName));
+                    if (rightValue != null && rightValue.type == ValueType.CHAR) {
+                        rightValue = new Value(rightValue.toString());
+                    }
+                }
             } else {
-                rightValue = getConstantValue(rightExpr); // Handle constant right value
-
+                rightValue = getConstantValue(rightExpr);
             }
 
-            if (leftValue == null || rightValue == null)
+            // 如果任一值为null，根据SQL标准返回false
+            if (leftValue == null || rightValue == null) {
                 return false;
+            }
 
             int comparisonResult = ValueComparer.compare(leftValue, rightValue);
-            if (operator.equals("=")) {
-                return comparisonResult == 0;
-            } else if (operator.equals(">")) {
-                return comparisonResult > 0;
-            } else if (operator.equals("<")) {
-                return comparisonResult < 0;
-            } else if (operator.equals("<>") || operator.equals("!=")) {
-                return comparisonResult != 0;
-            } else if (operator.equals(">=")) {
-                return comparisonResult >= 0;
-            } else if (operator.equals("<=")) {
-                return comparisonResult <= 0;
-            }
-
+            return switch (operator) {
+                case "=" -> comparisonResult == 0;
+                case ">" -> comparisonResult > 0;
+                case "<" -> comparisonResult < 0;
+                case "<>", "!=" -> comparisonResult != 0;
+                case ">=" -> comparisonResult >= 0;
+                case "<=" -> comparisonResult <= 0;
+                default -> false;
+            };
         } catch (DBException e) {
             e.printStackTrace(); // Handle exception properly
         }
