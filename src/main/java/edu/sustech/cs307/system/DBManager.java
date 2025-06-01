@@ -241,7 +241,13 @@ public class DBManager {
             Map<String, Object> columnInfo = new HashMap<>();
             columnInfo.put("Field", columnMeta.name);
             columnInfo.put("Type", columnMeta.type.toString().toUpperCase());
-            columnInfo.put("Key", ""); // 暂不支持主键和索引
+            String keyValue = "";
+            if (tableMeta.isPrimaryKey(columnMeta.name)) {
+                keyValue = "PRIMARY KEY";
+            } else if (tableMeta.getIndexes() != null && tableMeta.getIndexes().containsKey(columnMeta.name)) {
+                keyValue = "MUL";
+            }
+            columnInfo.put("Key", keyValue);
             columns.add(columnInfo);
         }
         return columns;

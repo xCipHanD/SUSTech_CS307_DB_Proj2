@@ -145,12 +145,12 @@ public class LogicalPlanner {
             groupByExpressions = plainSelect.getGroupBy().getGroupByExpressions();
         }
 
-        // 修复：先应用聚合，再投影
+        // 先应用聚合，再投影
         // 如果有聚合函数，先处理聚合操作（在原始数据上）
         if (hasAggregates || (groupByExpressions != null && !groupByExpressions.isEmpty())) {
             root = new LogicalAggregateOperator(root, plainSelect.getSelectItems(), groupByExpressions);
         }
-        // 然后应用投影（如果需要的话）
+        // 然后应用投影
         // 注意：对于聚合查询，LogicalAggregateOperator已经处理了投影
         // 只有在非聚合查询时才需要额外的投影操作
         if (!hasAggregates && (groupByExpressions == null || groupByExpressions.isEmpty())) {

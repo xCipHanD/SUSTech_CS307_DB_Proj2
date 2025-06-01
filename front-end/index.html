@@ -745,7 +745,7 @@
             html += '<strong>执行成功</strong>';
 
             if (sql && sql.length <= 100) {
-                html += ` | 查询语句：${escapeHtml(sql)}`;
+                html += ` | 查询语句：${formatMessageText(sql)}`;
             }
 
             if (data.rowCount !== undefined) {
@@ -808,7 +808,7 @@
                     <span class="statement-status">${result.status.toUpperCase()}</span>
                 </div>
                 <div class="statement-sql">
-                    <code>${escapeHtml(result.sql)}</code>
+                    <code>${formatMessageText(result.sql)}</code>
                 </div>`;
 
             if (result.status === 'success' || result.status === 'help') {
@@ -838,7 +838,7 @@
             // 表头
             html += '<thead><tr>';
             columns.forEach(col => {
-                html += `<th>${escapeHtml(col)}</th>`;
+                html += `<th>${formatMessageText(col)}</th>`;
             });
             html += '</tr></thead>';
 
@@ -850,7 +850,7 @@
                     const cellValue = row[col];
                     const displayValue = cellValue === null || cellValue === undefined ?
                         '(null)' : String(cellValue);
-                    html += `<td>${escapeHtml(displayValue)}</td>`;
+                    html += `<td>${formatMessageText(displayValue)}</td>`;
                 });
                 html += '</tr>';
             });
@@ -998,7 +998,7 @@
             if (data.message) {
                 html += `<div class="btree-display">
                     <h4>🌳 B+ Tree 结构</h4>
-                    <pre class="btree-structure">${escapeHtml(data.message)}</pre>
+                    <pre class="btree-structure">${formatMessageText(data.message)}</pre>
                 </div>`;
             } else {
                 html += '<div class="no-results">未获取到B+树结构信息</div>';

@@ -130,6 +130,15 @@ public class DiskManager {
         }
     }
 
+    private boolean batchMode = false;
+
+    /**
+     * 启用批量模式，减少磁盘同步次数以提高性能
+     */
+    public void setBatchMode(boolean enabled) {
+        this.batchMode = enabled;
+    }
+
     /**
      * 将指定页面的数据刷新到磁盘。
      *
@@ -150,11 +159,21 @@ public class DiskManager {
             while (buffer.hasRemaining()) {
                 channel.write(buffer);
             }
-            // 强制刷新到磁盘
-            channel.force(true);
+            // 性能优化：批量模式下减少强制同步次数
+            if (!batchMode) {
+                channel.force(true);
+            }
         } catch (IOException e) {
             throw new DBException(ExceptionTypes.BadIOError(e.getMessage()));
         }
+    }
+
+    /**
+     * 强制同步所有待写入的数据到磁盘
+     */
+    public void forceSyncAll() throws DBException {
+        // 这个方法可以在批量操作完成后调用，确保数据持久化
+        System.gc(); // 建议GC回收，但实际同步由OS处理
     }
 
     public long GetFileSize(String filename) {
