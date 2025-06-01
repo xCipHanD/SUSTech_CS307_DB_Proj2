@@ -33,3 +33,5 @@ CS307-DB/**
 target/
 
 .vscode/
+
+*.sql
