@@ -10,6 +10,8 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.HashSet;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class TableMeta {
@@ -19,7 +21,10 @@ public class TableMeta {
     @JsonIgnore
     public Map<String, ColumnMeta> columns; // 列名 -> 列的元数据
 
-    private Map<String, IndexType> indexes; // 索引信息
+    private Map<String, IndexType> indexes; // 列名 -> 索引类型 (保持向后兼容)
+
+    // 新增：索引名称到列名的映射
+    private Map<String, String> indexNameToColumn; // 索引名 -> 列名
 
     private Map<String, Integer> column_rank;
 
@@ -31,6 +36,7 @@ public class TableMeta {
         this.tableName = tableName;
         this.columns = new HashMap<>();
         this.indexes = new HashMap<>();
+        this.indexNameToColumn = new HashMap<>();
     }
 
     public TableMeta(String tableName, ArrayList<ColumnMeta> columns) {
@@ -38,6 +44,7 @@ public class TableMeta {
         this.columns_list = columns;
         this.columns = new HashMap<>();
         this.indexes = new HashMap<>();
+        this.indexNameToColumn = new HashMap<>();
         for (ColumnMeta column : columns) {
             this.columns.put(column.name, column);
         }
@@ -46,13 +53,18 @@ public class TableMeta {
     @JsonCreator
     public TableMeta(@JsonProperty("tableName") String tableName,
             @JsonProperty("columns_list") ArrayList<ColumnMeta> columns_list,
-            @JsonProperty("indexes") Map<String, IndexType> indexes) {
+            @JsonProperty("indexes") Map<String, IndexType> indexes,
+            @JsonProperty("indexNameToColumn") Map<String, String> indexNameToColumn) {
         this.tableName = tableName;
         this.columns_list = columns_list;
         this.columns = new HashMap<>();
-        this.indexes = indexes;
-        for (var column : columns_list) {
-            this.columns.put(column.name, column);
+        this.indexes = indexes != null ? indexes : new HashMap<>();
+        this.indexNameToColumn = indexNameToColumn != null ? indexNameToColumn : new HashMap<>();
+
+        if (columns_list != null) {
+            for (var column : columns_list) {
+                this.columns.put(column.name, column);
+            }
         }
     }
 
@@ -129,11 +141,91 @@ public class TableMeta {
         return primaryKeyColumn != null && primaryKeyColumn.equals(columnName);
     }
 
+    /**
+     * 添加索引信息 (支持索引名称)
+     * 
+     * @param indexName  索引名称
+     * @param columnName 列名
+     * @param indexType  索引类型
+     */
+    public void addIndex(String indexName, String columnName, IndexType indexType) {
+        if (this.indexes == null) {
+            this.indexes = new HashMap<>();
+        }
+        if (this.indexNameToColumn == null) {
+            this.indexNameToColumn = new HashMap<>();
+        }
+
+        this.indexes.put(columnName, indexType);
+        this.indexNameToColumn.put(indexName, columnName);
+    }
+
+    /**
+     * 根据索引名称删除索引
+     * 
+     * @param indexName 索引名称
+     * @return 被删除索引对应的列名，如果索引不存在返回null
+     */
+    public String removeIndexByName(String indexName) {
+        if (this.indexNameToColumn == null) {
+            return null;
+        }
+
+        String columnName = this.indexNameToColumn.remove(indexName);
+        if (columnName != null && this.indexes != null) {
+            this.indexes.remove(columnName);
+        }
+        return columnName;
+    }
+
+    /**
+     * 根据索引名称查找列名
+     * 
+     * @param indexName 索引名称
+     * @return 对应的列名，如果不存在返回null
+     */
+    public String getColumnByIndexName(String indexName) {
+        if (this.indexNameToColumn == null) {
+            return null;
+        }
+        return this.indexNameToColumn.get(indexName);
+    }
+
+    /**
+     * 检查索引名称是否存在
+     * 
+     * @param indexName 索引名称
+     * @return 如果存在返回true，否则返回false
+     */
+    public boolean hasIndexName(String indexName) {
+        return this.indexNameToColumn != null && this.indexNameToColumn.containsKey(indexName);
+    }
+
+    /**
+     * 获取所有索引名称
+     * 
+     * @return 索引名称集合
+     */
+    public Set<String> getIndexNames() {
+        if (this.indexNameToColumn == null) {
+            return new HashSet<>();
+        }
+        return this.indexNameToColumn.keySet();
+    }
+
     public Map<String, IndexType> getIndexes() {
         return indexes;
     }
 
     public void setIndexes(Map<String, IndexType> indexes) {
         this.indexes = indexes;
+    }
+
+    public Map<String, String> getIndexNameToColumn() {
+        return indexNameToColumn;
+    }
+
+    public void setIndexNameToColumn(Map<String, String> indexNameToColumn) {
+        this.indexNameToColumn = indexNameToColumn;
     }
 }

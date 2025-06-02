@@ -6,6 +6,8 @@ import java.util.function.Function;
 
 import edu.sustech.cs307.logicalOperator.dml.DropTableExecutor;
 import edu.sustech.cs307.logicalOperator.dml.AlterTableExecutor;
+import edu.sustech.cs307.logicalOperator.dml.CreateIndexExecutor;
+import edu.sustech.cs307.logicalOperator.dml.DropIndexExecutor;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.parser.CCJSqlParserManager;
 import net.sf.jsqlparser.parser.JSqlParser;
@@ -16,6 +18,7 @@ import net.sf.jsqlparser.statement.ShowStatement;
 import net.sf.jsqlparser.statement.Statement;
 import net.sf.jsqlparser.statement.alter.Alter;
 import net.sf.jsqlparser.statement.drop.Drop;
+import net.sf.jsqlparser.statement.create.index.CreateIndex;
 import net.sf.jsqlparser.statement.select.*;
 import net.sf.jsqlparser.statement.show.ShowTablesStatement;
 import net.sf.jsqlparser.statement.update.Update;
@@ -59,10 +62,22 @@ public class LogicalPlanner {
             CreateTableExecutor createTable = new CreateTableExecutor(createTableStmt, dbManager, sql);
             createTable.execute();
             return null;
-        } else if (stmt instanceof Drop dropTableStmt) {
-            DropTableExecutor dropTable = new DropTableExecutor(dropTableStmt, dbManager);
-            dropTable.execute();
+        } else if (stmt instanceof CreateIndex createIndexStmt) {
+            CreateIndexExecutor createIndex = new CreateIndexExecutor(createIndexStmt, dbManager);
+            createIndex.execute();
             return null;
+        } else if (stmt instanceof Drop dropStmt) {
+            // 检查是否是 DROP INDEX 语句
+            if (dropStmt.getType().equalsIgnoreCase("INDEX")) {
+                DropIndexExecutor dropIndex = new DropIndexExecutor(dropStmt, dbManager);
+                dropIndex.execute();
+                return null;
+            } else {
+                // 默认处理为 DROP TABLE
+                DropTableExecutor dropTable = new DropTableExecutor(dropStmt, dbManager);
+                dropTable.execute();
+                return null;
+            }
         } else if (stmt instanceof Alter alterStmt) {
             AlterTableExecutor alterTable = new AlterTableExecutor(alterStmt, dbManager);
             alterTable.execute();

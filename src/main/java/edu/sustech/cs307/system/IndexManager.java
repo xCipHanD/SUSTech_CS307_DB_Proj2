@@ -76,17 +76,6 @@ public class IndexManager {
 
         indexes.computeIfAbsent(tableName, k -> new ConcurrentHashMap<>()).put(columnName, index);
 
-        if (tableMeta.getIndexes() == null) {
-            tableMeta.setIndexes(new HashMap<>());
-        }
-        tableMeta.getIndexes().put(columnName, TableMeta.IndexType.BTREE);
-
-        try {
-            metaManager.saveToJson();
-        } catch (DBException e) {
-            Logger.warn("Failed to save metadata after index creation: {}", e.getMessage());
-        }
-
         Logger.info("Created B+Tree index for {}.{} with degree {}", tableName, columnName, degree);
 
         // 立即填充现有数据到索引中
