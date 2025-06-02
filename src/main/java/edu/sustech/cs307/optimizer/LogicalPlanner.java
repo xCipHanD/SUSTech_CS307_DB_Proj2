@@ -122,10 +122,13 @@ public class LogicalPlanner {
                     joinType = LogicalJoinOperator.JoinType.LEFT;
                 } else if (join.isRight()) {
                     joinType = LogicalJoinOperator.JoinType.RIGHT;
-                } else if (join.isFull()) {
-                    joinType = LogicalJoinOperator.JoinType.FULL;
+                } else if (join.isCross()) {
+                    joinType = LogicalJoinOperator.JoinType.CROSS;
                 } else if (join.isInner() || join.isSimple()) {
                     joinType = LogicalJoinOperator.JoinType.INNER;
+                } else {
+                    throw new DBException(
+                            ExceptionTypes.UnsupportedCommand("Unsupported JOIN type: " + join.toString()));
                 }
 
                 root = new LogicalJoinOperator(

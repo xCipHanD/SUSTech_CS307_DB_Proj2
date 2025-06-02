@@ -12,7 +12,7 @@ public class LogicalJoinOperator extends LogicalOperator {
         INNER,
         LEFT,
         RIGHT,
-        FULL
+        CROSS
     }
 
     private final Collection<Expression> onExpressions;
