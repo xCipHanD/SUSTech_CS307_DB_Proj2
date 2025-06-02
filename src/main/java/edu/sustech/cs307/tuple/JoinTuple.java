@@ -7,6 +7,7 @@ import edu.sustech.cs307.value.Value;
 /**
  * JoinTuple 类表示两个元组的连接结果。
  * 它包含两个元组（leftTuple 和 rightTuple）以及连接后的列信息（tabCol）。
+ * 支持 LEFT JOIN 和 RIGHT JOIN 中的 null 值处理。
  */
 public class JoinTuple extends Tuple {
     private final Tuple leftTuple;
@@ -21,7 +22,7 @@ public class JoinTuple extends Tuple {
 
     /**
      * 获取指定记录中对应列的值。
-     * 首先尝试从左侧元组中获取值，如果左侧值为 null，则从右侧元组中获取值。
+     * 首先尝试从左侧元组中获取值，如果左侧值为 null 或左侧元组为 null，则从右侧元组中获取值。
      *
      * @param tabCol 要获取值的列
      * @return 返回对应列的值，如果两侧元组均无值，则返回 null
@@ -39,25 +40,32 @@ public class JoinTuple extends Tuple {
                 }
             }
         }
-        Value leftValue = null;
-        try {
-            if (tableName != null) {
-                TabCol leftTabCol = new TabCol(tableName, columnName);
-                leftValue = leftTuple.getValue(leftTabCol);
-                if (leftValue != null) {
-                    return leftValue;
+
+        // 尝试从左侧元组获取值
+        if (leftTuple != null) {
+            try {
+                if (tableName != null) {
+                    TabCol leftTabCol = new TabCol(tableName, columnName);
+                    Value leftValue = leftTuple.getValue(leftTabCol);
+                    if (leftValue != null) {
+                        return leftValue;
+                    }
                 }
+            } catch (DBException e) {
+                // 左侧元组中没有找到该列，继续尝试右侧
             }
-        } catch (DBException e) {
         }
 
-        try {
-            if (tableName != null) {
-                TabCol rightTabCol = new TabCol(tableName, columnName);
-                return rightTuple.getValue(rightTabCol);
+        // 尝试从右侧元组获取值
+        if (rightTuple != null) {
+            try {
+                if (tableName != null) {
+                    TabCol rightTabCol = new TabCol(tableName, columnName);
+                    return rightTuple.getValue(rightTabCol);
+                }
+            } catch (DBException e) {
+                // 右侧元组中也没有找到该列
             }
-        } catch (DBException e) {
-
         }
 
         return null;
@@ -80,5 +88,19 @@ public class JoinTuple extends Tuple {
             result[i] = getValue(tupleSchema[i]);
         }
         return result;
+    }
+
+    /**
+     * 获取左侧元组
+     */
+    public Tuple getLeftTuple() {
+        return leftTuple;
+    }
+
+    /**
+     * 获取右侧元组
+     */
+    public Tuple getRightTuple() {
+        return rightTuple;
     }
 }

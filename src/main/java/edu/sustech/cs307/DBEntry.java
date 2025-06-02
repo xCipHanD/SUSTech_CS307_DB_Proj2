@@ -191,7 +191,7 @@ public class DBEntry {
                     }
                     sql = sqlBuilder.toString().trim();
                     Logger.info("Executing: " + sql);
-                    if (sql.equalsIgnoreCase("exit;")) {
+                    if (sql.toUpperCase().contains("EXIT")) {
                         running = false;
                         Logger.info("Exiting CS307-DB. Goodbye!");
                         continue;

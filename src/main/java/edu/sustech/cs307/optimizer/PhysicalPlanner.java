@@ -209,7 +209,7 @@ public class PhysicalPlanner {
             throws DBException {
         PhysicalOperator leftOp = generateOperator(dbManager, logicalJoinOp.getLeftInput());
         PhysicalOperator rightOp = generateOperator(dbManager, logicalJoinOp.getRightInput());
-        return new NestedLoopJoinOperator(leftOp, rightOp, logicalJoinOp.getJoinExprs());
+        return new NestedLoopJoinOperator(leftOp, rightOp, logicalJoinOp.getJoinExprs(), logicalJoinOp.getJoinType());
     }
 
     private static PhysicalOperator handleProject(DBManager dbManager, LogicalProjectOperator logicalProjectOp)

@@ -170,7 +170,6 @@ public class BufferPool {
         Integer frame_id = pageMap.get(position);
         if (frame_id != null) {
             Page pageToReset = pages.get(frame_id);
-
             if (pageToReset.pin_count > 0) {
                 return false;
             }
@@ -207,17 +206,14 @@ public class BufferPool {
             if (filename.equals("") || position.filename.equals(filename)) {
                 Page page = pages.get(frame_id);
                 try {
-                    // 检查文件是否存在，避免刷新已删除文件的页面
                     if (diskManager.fileExists(position.filename)) {
                         diskManager.FlushPage(page);
                         page.dirty = false;
                     } else {
-                        // 如果文件不存在，只清除脏标志，不进行实际刷新
                         page.dirty = false;
                     }
                 } catch (DBException e) {
-                    // 如果刷新失败（可能是文件已删除），记录警告但继续处理其他页面
-                    page.dirty = false; // 清除脏标志避免后续重复尝试
+                    page.dirty = false;
                 }
             }
         }

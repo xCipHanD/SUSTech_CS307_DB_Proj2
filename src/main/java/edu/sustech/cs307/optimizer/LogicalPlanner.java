@@ -115,10 +115,24 @@ public class LogicalPlanner {
         int depth = 0;
         if (plainSelect.getJoins() != null) {
             for (Join join : plainSelect.getJoins()) {
+                // 确定 JOIN 类型
+                LogicalJoinOperator.JoinType joinType = LogicalJoinOperator.JoinType.INNER; // 默认为 INNER JOIN
+
+                if (join.isLeft()) {
+                    joinType = LogicalJoinOperator.JoinType.LEFT;
+                } else if (join.isRight()) {
+                    joinType = LogicalJoinOperator.JoinType.RIGHT;
+                } else if (join.isFull()) {
+                    joinType = LogicalJoinOperator.JoinType.FULL;
+                } else if (join.isInner() || join.isSimple()) {
+                    joinType = LogicalJoinOperator.JoinType.INNER;
+                }
+
                 root = new LogicalJoinOperator(
                         root,
                         new LogicalTableScanOperator(join.getRightItem().toString(), dbManager),
                         join.getOnExpressions(),
+                        joinType,
                         depth);
                 depth += 1;
             }
