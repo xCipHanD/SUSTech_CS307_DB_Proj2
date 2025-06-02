@@ -176,6 +176,24 @@ public class DiskManager {
         System.gc(); // 建议GC回收，但实际同步由OS处理
     }
 
+    /**
+     * 同步磁盘管理器状态，确保元数据和文件状态的一致性
+     */
+    public void sync() throws DBException {
+        try {
+            // 1. 强制同步所有文件内容到磁盘
+            forceSyncAll();
+
+            // 2. 保存磁盘管理器元数据
+            dump_disk_manager_meta(this);
+
+            Logger.debug("DiskManager state synchronized successfully");
+        } catch (Exception e) {
+            Logger.error("Failed to sync DiskManager state: {}", e.getMessage());
+            throw new DBException(ExceptionTypes.BadIOError("DiskManager sync failed: " + e.getMessage()));
+        }
+    }
+
     public long GetFileSize(String filename) {
         String real_path = currentDir + "/" + filename;
         File file = new File(real_path);
@@ -242,5 +260,41 @@ public class DiskManager {
             }
             this.filePages.remove(filename);
         }
+    }
+
+    /**
+     * 批量删除指定文件的所有页面，用于表重组操作
+     * 
+     * @param filename 要清空的文件名
+     * @throws DBException 如果删除过程中发生错误
+     */
+    public void truncateFile(String filename) throws DBException {
+        String real_path = currentDir + "/" + filename;
+        File file = new File(real_path);
+
+        if (file.exists()) {
+            try {
+                // 清空文件内容但保留文件
+                try (RandomAccessFile raf = new RandomAccessFile(real_path, "rw")) {
+                    raf.setLength(0);
+                }
+                // 重置页面计数
+                this.filePages.put(filename, 1);
+                Logger.debug("Truncated file: {}", filename);
+            } catch (IOException e) {
+                throw new DBException(ExceptionTypes.BadIOError("Failed to truncate file: " + e.getMessage()));
+            }
+        }
+    }
+
+    /**
+     * 获取文件的页面数量
+     * 
+     * @param filename 文件名
+     * @return 页面数量，如果文件不存在返回0
+     */
+    public int getPageCount(String filename) {
+        Integer count = this.filePages.get(filename);
+        return count != null ? count : 0;
     }
 }

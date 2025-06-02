@@ -201,21 +201,42 @@ public class IndexManager {
     public synchronized boolean dropIndex(String tableName, String columnName) {
         Map<String, Index> tableIndexes = indexes.get(tableName);
         if (tableIndexes != null && tableIndexes.containsKey(columnName)) {
+            // 获取要删除的索引实例
+            Index indexToRemove = tableIndexes.get(columnName);
+
+            // 完整的 B+Tree 生命周期管理 - 清理索引资源
+            try {
+                if (indexToRemove instanceof BPlusTreeIndex) {
+                    BPlusTreeIndex btreeIndex = (BPlusTreeIndex) indexToRemove;
+                    // 清理 B+Tree 的内部结构和缓存
+                    btreeIndex.clear(); // 假设 BPlusTreeIndex 有 clear 方法
+                    Logger.debug("Cleared B+Tree internal structures for {}.{}", tableName, columnName);
+                }
+            } catch (Exception e) {
+                Logger.warn("Failed to clear B+Tree structures for {}.{}: {}", tableName, columnName, e.getMessage());
+                // 继续删除操作，不因清理失败而停止
+            }
+
+            // 从内存中移除索引
             tableIndexes.remove(columnName);
             if (tableIndexes.isEmpty()) {
                 indexes.remove(tableName);
             }
+
+            // 更新元数据
             try {
                 TableMeta tableMeta = metaManager.getTable(tableName);
                 if (tableMeta != null && tableMeta.getIndexes() != null) {
                     tableMeta.getIndexes().remove(columnName);
                     metaManager.saveToJson();
+                    Logger.debug("Updated metadata after dropping index for {}.{}", tableName, columnName);
                 }
             } catch (DBException e) {
                 Logger.warn("Failed to update metadata after dropping index: {}", e.getMessage());
+                // 不抛出异常，因为索引已经从内存中删除
             }
 
-            Logger.info("Dropped index for {}.{}", tableName, columnName);
+            Logger.info("Successfully dropped B+Tree index for {}.{}", tableName, columnName);
             return true;
         }
         Logger.warn("Attempted to drop non-existent index for {}.{}", tableName, columnName);
@@ -223,7 +244,7 @@ public class IndexManager {
     }
 
     /**
-     * 删除指定表的所有索引
+     * 删除指定表的所有索引 - 完整的生命周期管理
      *
      * @param tableName 表名
      * @return 删除的索引数量
@@ -232,9 +253,42 @@ public class IndexManager {
         Map<String, Index> tableIndexes = indexes.get(tableName);
         if (tableIndexes != null) {
             int indexCount = tableIndexes.size();
+
+            // 逐个清理每个索引的资源
+            for (Map.Entry<String, Index> entry : tableIndexes.entrySet()) {
+                String columnName = entry.getKey();
+                Index index = entry.getValue();
+
+                try {
+                    if (index instanceof BPlusTreeIndex) {
+                        BPlusTreeIndex btreeIndex = (BPlusTreeIndex) index;
+                        btreeIndex.clear(); // 清理 B+Tree 内部结构
+                        Logger.debug("Cleared B+Tree structures for {}.{}", tableName, columnName);
+                    }
+                } catch (Exception e) {
+                    Logger.warn("Failed to clear B+Tree structures for {}.{}: {}",
+                            tableName, columnName, e.getMessage());
+                }
+            }
+
+            // 清空并移除表的所有索引
             tableIndexes.clear();
             indexes.remove(tableName);
-            Logger.info("Dropped all {} indexes for table {}", indexCount, tableName);
+
+            // 更新元数据
+            try {
+                TableMeta tableMeta = metaManager.getTable(tableName);
+                if (tableMeta != null && tableMeta.getIndexes() != null) {
+                    tableMeta.getIndexes().clear();
+                    metaManager.saveToJson();
+                    Logger.debug("Updated metadata after dropping all indexes for table {}", tableName);
+                }
+            } catch (DBException e) {
+                Logger.warn("Failed to update metadata after dropping all indexes for table {}: {}",
+                        tableName, e.getMessage());
+            }
+
+            Logger.info("Successfully dropped all {} B+Tree indexes for table {}", indexCount, tableName);
             return indexCount;
         }
         Logger.info("No indexes found for table {}", tableName);

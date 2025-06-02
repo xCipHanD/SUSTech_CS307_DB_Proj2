@@ -62,6 +62,11 @@ public class TableMeta {
             throw new DBException(ExceptionTypes.ColumnAlreadyExist(columnName));
         }
         this.columns.put(columnName, column);
+        // 修复：同步更新columns_list
+        if (this.columns_list == null) {
+            this.columns_list = new ArrayList<>();
+        }
+        this.columns_list.add(column);
     }
 
     public void dropColumn(String columnName) throws DBException {
@@ -69,6 +74,10 @@ public class TableMeta {
             throw new DBException(ExceptionTypes.ColumnDoesNotExist(columnName));
         }
         this.columns.remove(columnName);
+        // 修复：同步更新columns_list
+        if (this.columns_list != null) {
+            this.columns_list.removeIf(column -> column.name.equals(columnName));
+        }
     }
 
     public ColumnMeta getColumnMeta(String columnName) {

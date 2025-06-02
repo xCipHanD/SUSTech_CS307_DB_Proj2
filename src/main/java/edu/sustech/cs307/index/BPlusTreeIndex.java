@@ -943,4 +943,45 @@ public class BPlusTreeIndex implements Index {
         }
         return node.isLeaf ? node : null;
     }
+
+    /**
+     * 清理 B+Tree 的所有内部结构和资源
+     * 用于索引删除时的完整生命周期管理
+     */
+    public void clear() {
+        if (root != null) {
+            clearNodeRecursively(root);
+            root = null;
+        }
+        Logger.debug("Cleared B+Tree index for {}.{}", tableName, columnName);
+    }
+
+    /**
+     * 递归清理节点及其子节点的资源
+     */
+    private void clearNodeRecursively(BPlusTreeNode node) {
+        if (node == null) {
+            return;
+        }
+
+        // 递归清理所有子节点
+        if (!node.isLeaf && node.children != null) {
+            for (BPlusTreeNode child : node.children) {
+                clearNodeRecursively(child);
+            }
+            node.children.clear();
+        }
+
+        // 清理当前节点的数据
+        if (node.keys != null) {
+            node.keys.clear();
+        }
+        if (node.rids != null) {
+            node.rids.clear();
+        }
+
+        // 断开节点之间的链接
+        node.parent = null;
+        node.nextLeaf = null;
+    }
 }

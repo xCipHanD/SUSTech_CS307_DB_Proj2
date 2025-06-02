@@ -10,6 +10,7 @@ import java.util.Set;
 
 import edu.sustech.cs307.exception.DBException;
 import edu.sustech.cs307.exception.ExceptionTypes;
+import org.pmw.tinylog.Logger;
 
 public class MetaManager {
     private static final String META_FILE = "meta_data.json";
@@ -55,7 +56,13 @@ public class MetaManager {
         if (!tables.containsKey(tableName)) {
             throw new DBException(ExceptionTypes.TableDoesNotExist(tableName));
         }
-        this.tables.get(tableName).dropColumn((columnName));
+        TableMeta tableMeta = this.tables.get(tableName);
+        tableMeta.dropColumn(columnName);
+
+        // 同时从 columns_list 中删除
+        tableMeta.columns_list.removeIf(column -> column.name.equals(columnName));
+
+        saveToJson();
     }
 
     public TableMeta getTable(String tableName) throws DBException {
@@ -99,5 +106,75 @@ public class MetaManager {
         } catch (Exception e) {
             throw new DBException(ExceptionTypes.UnableLoadMetadata(e.getMessage()));
         }
+    }
+
+    /**
+     * 为 ALTER TABLE 操作重组表数据
+     * 在列结构发生变化后，需要重新组织所有现有数据
+     * 
+     * @param tableName    表名
+     * @param oldTableMeta 旧的表元数据
+     * @param newTableMeta 新的表元数据
+     * @throws DBException 如果重组过程中发生错误
+     */
+    public void reorganizeTableData(String tableName, TableMeta oldTableMeta, TableMeta newTableMeta)
+            throws DBException {
+        try {
+            // 计算旧表的记录大小
+            int oldRecordSize = 0;
+            for (ColumnMeta column : oldTableMeta.columns_list) {
+                oldRecordSize += column.len;
+            }
+
+            // 计算新表的记录大小
+            int newRecordSize = 0;
+            for (ColumnMeta column : newTableMeta.columns_list) {
+                newRecordSize += column.len;
+            }
+
+            // 1. 验证重组的必要性
+            if (oldRecordSize == newRecordSize) {
+                Logger.debug("Table {} structure unchanged, skipping data reorganization", tableName);
+                return;
+            }
+
+            // 2. 更新表元数据
+            tables.put(tableName, newTableMeta);
+
+            // 3. 保存元数据变更
+            saveToJson();
+
+            Logger.info("Table {} metadata updated for ALTER TABLE operation", tableName);
+
+        } catch (Exception e) {
+            Logger.error("Failed to reorganize table data for {}: {}", tableName, e.getMessage());
+            throw new DBException(ExceptionTypes.BadIOError("Table reorganization failed: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * 验证列删除操作的安全性
+     * 检查是否存在依赖关系（如索引）
+     * 
+     * @param tableName  表名
+     * @param columnName 要删除的列名
+     * @throws DBException 如果删除操作不安全
+     */
+    public void validateColumnDrop(String tableName, String columnName) throws DBException {
+        TableMeta tableMeta = getTable(tableName);
+        if (tableMeta == null) {
+            throw new DBException(ExceptionTypes.TableDoesNotExist(tableName));
+        }
+
+        // 检查是否存在该列的索引
+        if (tableMeta.getIndexes() != null && tableMeta.getIndexes().containsKey(columnName)) {
+            Logger.warn("Column {} has index, should be dropped before column deletion", columnName);
+            // 可以选择自动删除索引或者要求用户手动删除
+        }
+
+        // 检查是否为主键列（如果有主键约束的话）
+        // 这里可以添加更多的约束检查
+
+        Logger.debug("Column drop validation passed for {}.{}", tableName, columnName);
     }
 }

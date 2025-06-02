@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.function.Function;
 
 import edu.sustech.cs307.logicalOperator.dml.DropTableExecutor;
+import edu.sustech.cs307.logicalOperator.dml.AlterTableExecutor;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.parser.CCJSqlParserManager;
 import net.sf.jsqlparser.parser.JSqlParser;
@@ -13,6 +14,7 @@ import net.sf.jsqlparser.statement.ExplainStatement;
 import net.sf.jsqlparser.statement.ShowColumnsStatement;
 import net.sf.jsqlparser.statement.ShowStatement;
 import net.sf.jsqlparser.statement.Statement;
+import net.sf.jsqlparser.statement.alter.Alter;
 import net.sf.jsqlparser.statement.drop.Drop;
 import net.sf.jsqlparser.statement.select.*;
 import net.sf.jsqlparser.statement.show.ShowTablesStatement;
@@ -60,6 +62,10 @@ public class LogicalPlanner {
         } else if (stmt instanceof Drop dropTableStmt) {
             DropTableExecutor dropTable = new DropTableExecutor(dropTableStmt, dbManager);
             dropTable.execute();
+            return null;
+        } else if (stmt instanceof Alter alterStmt) {
+            AlterTableExecutor alterTable = new AlterTableExecutor(alterStmt, dbManager);
+            alterTable.execute();
             return null;
         } else if (stmt instanceof ExplainStatement) {
             ExplainExecutor explainExecutor = new ExplainExecutor(dbManager, sql);
