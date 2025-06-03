@@ -44,7 +44,6 @@ public class AlterTableExecutor implements DMLExecutor {
         Logger.info("Starting ALTER TABLE operation for table {}", tableName);
 
         try {
-            // 处理每个 ALTER 操作
             for (AlterExpression alterExpr : alterStmt.getAlterExpressions()) {
                 processAlterExpression(tableName, alterExpr);
             }
@@ -90,19 +89,16 @@ public class AlterTableExecutor implements DMLExecutor {
 
         TableMeta tableMeta = dbManager.getMetaManager().getTable(tableName);
 
-        // 检查列是否存在
         if (tableMeta.getColumnMeta(columnName) == null) {
             throw new DBException(ExceptionTypes.ColumnDoesNotExist(columnName));
         }
 
-        // 检查是否是主键列
         String primaryKeyColumn = tableMeta.getPrimaryKeyColumn();
         if (columnName.equals(primaryKeyColumn)) {
             throw new DBException(ExceptionTypes.UnsupportedCommand(
                     "Cannot drop primary key column. Please modify the column to remove primary key first."));
         }
 
-        // 删除相关索引 - 确保完整的 B+Tree 生命周期管理
         if (tableMeta.getIndexes() != null && tableMeta.getIndexes().containsKey(columnName)) {
             boolean indexDropped = dbManager.getIndexManager().dropIndex(tableName, columnName);
             if (indexDropped) {
@@ -112,13 +108,10 @@ public class AlterTableExecutor implements DMLExecutor {
             }
         }
 
-        // 从元数据中删除列
         dbManager.getMetaManager().dropColumnInTable(tableName, columnName);
 
-        // 重新计算列的偏移量
         recalculateColumnOffsets(tableName);
 
-        // 同步更新所有管理器状态
         syncManagerStates(tableName);
 
         Logger.info("Successfully dropped column {} from table {}", columnName, tableName);
@@ -134,12 +127,10 @@ public class AlterTableExecutor implements DMLExecutor {
         TableMeta tableMeta = dbManager.getMetaManager().getTable(tableName);
         ColumnMeta columnMeta = tableMeta.getColumnMeta(columnName);
 
-        // 检查列是否存在
         if (columnMeta == null) {
             throw new DBException(ExceptionTypes.ColumnDoesNotExist(columnName));
         }
 
-        // 检查是否要设置为主键
         boolean shouldBePrimaryKey = false;
         if (colDef.getColumnSpecs() != null) {
             for (String spec : colDef.getColumnSpecs()) {
@@ -154,10 +145,8 @@ public class AlterTableExecutor implements DMLExecutor {
         boolean isCurrentlyPrimaryKey = columnName.equals(currentPrimaryKey);
 
         if (shouldBePrimaryKey && !isCurrentlyPrimaryKey) {
-            // 添加主键
             addPrimaryKey(tableName, columnName);
         } else if (!shouldBePrimaryKey && isCurrentlyPrimaryKey) {
-            // 取消主键
             removePrimaryKey(tableName, columnName);
         } else if (shouldBePrimaryKey && isCurrentlyPrimaryKey) {
             Logger.info("Column {} is already a primary key", columnName);
@@ -172,7 +161,6 @@ public class AlterTableExecutor implements DMLExecutor {
     private void addPrimaryKey(String tableName, String columnName) throws DBException {
         TableMeta tableMeta = dbManager.getMetaManager().getTable(tableName);
 
-        // 检查是否已经有主键
         String currentPrimaryKey = tableMeta.getPrimaryKeyColumn();
         if (currentPrimaryKey != null) {
             throw new DBException(ExceptionTypes.UnsupportedCommand(
@@ -180,26 +168,17 @@ public class AlterTableExecutor implements DMLExecutor {
                             ". Please remove it first before adding a new primary key."));
         }
 
-        // 全表扫描检查重复值
         checkForDuplicateValues(tableName, columnName);
-
-        // 创建 B+Tree 索引 - 完整的生命周期管理
         try {
-            // 首先在元数据中标记索引
             if (tableMeta.getIndexes() == null) {
                 tableMeta.setIndexes(new java.util.HashMap<>());
             }
             tableMeta.getIndexes().put(columnName, TableMeta.IndexType.BTREE);
-
-            // 创建实际的 B+Tree 索引
             dbManager.getIndexManager().createIndex(tableName, columnName);
-
-            // 同步更新所有管理器状态
             syncManagerStates(tableName);
 
             Logger.info("Successfully created B+Tree index for new primary key column {}", columnName);
         } catch (DBException e) {
-            // 回滚元数据更改
             if (tableMeta.getIndexes() != null) {
                 tableMeta.getIndexes().remove(columnName);
             }
@@ -217,7 +196,6 @@ public class AlterTableExecutor implements DMLExecutor {
     private void removePrimaryKey(String tableName, String columnName) throws DBException {
         TableMeta tableMeta = dbManager.getMetaManager().getTable(tableName);
 
-        // 完整的 B+Tree 生命周期管理 - 删除索引
         try {
             boolean indexDropped = dbManager.getIndexManager().dropIndex(tableName, columnName);
             if (indexDropped) {
@@ -226,12 +204,10 @@ public class AlterTableExecutor implements DMLExecutor {
                 Logger.warn("Index for column {} was not found or already dropped", columnName);
             }
 
-            // 从索引信息中移除该列
             if (tableMeta.getIndexes() != null) {
                 tableMeta.getIndexes().remove(columnName);
             }
 
-            // 同步更新所有管理器状态
             syncManagerStates(tableName);
 
             Logger.info("Successfully removed primary key constraint from column {}", columnName);
@@ -301,27 +277,19 @@ public class AlterTableExecutor implements DMLExecutor {
      */
     private void syncManagerStates(String tableName) throws DBException {
         try {
-            // 1. 保存元数据到磁盘
             dbManager.getMetaManager().saveToJson();
-
-            // 2. 刷新缓冲池中相关的页面
             dbManager.getBufferPool().FlushAllPages("");
-
-            // 3. 同步磁盘管理器状态
             dbManager.getDiskManager().sync();
 
-            // 4. 如果有索引同步器，重建索引以确保一致性
             IndexSynchronizer indexSynchronizer = new IndexSynchronizer(
                     dbManager.getIndexManager(),
                     dbManager.getMetaManager());
 
-            // 对于主键变更，重建所有索引确保一致性
             try {
                 indexSynchronizer.rebuildIndexesForTable(tableName);
                 Logger.info("Successfully rebuilt all indexes for table {} after ALTER operation", tableName);
             } catch (DBException e) {
                 Logger.warn("Failed to rebuild some indexes for table {}: {}", tableName, e.getMessage());
-                // 不抛出异常，因为核心操作已经完成
             }
 
             Logger.info("Successfully synchronized all manager states for table {}", tableName);

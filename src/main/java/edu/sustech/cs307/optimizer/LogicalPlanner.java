@@ -67,13 +67,11 @@ public class LogicalPlanner {
             createIndex.execute();
             return null;
         } else if (stmt instanceof Drop dropStmt) {
-            // 检查是否是 DROP INDEX 语句
             if (dropStmt.getType().equalsIgnoreCase("INDEX")) {
                 DropIndexExecutor dropIndex = new DropIndexExecutor(dropStmt, dbManager);
                 dropIndex.execute();
                 return null;
             } else {
-                // 默认处理为 DROP TABLE
                 DropTableExecutor dropTable = new DropTableExecutor(dropStmt, dbManager);
                 dropTable.execute();
                 return null;
@@ -111,23 +109,13 @@ public class LogicalPlanner {
     public static LogicalOperator handleSelect(DBManager dbManager, Select selectStmt) throws DBException {
         PlainSelect plainSelect = selectStmt.getPlainSelect();
         if (plainSelect.getFromItem() == null) {
-            // Handle SELECT without FROM, e.g., SELECT 1+1;
-            // This might involve a special operator or direct evaluation.
-            // For now, let's assume it's not supported or needs a different path.
-            // If there are aggregate functions without FROM, it's also a special case.
+
             boolean hasAggregates = plainSelect.getSelectItems().stream()
                     .anyMatch(item -> item.getExpression() instanceof Function);
             if (hasAggregates) {
-                // Create a dummy operator that produces one row, if necessary, for global
-                // aggregates
-                // This part needs careful design. For now, let's assume aggregates need a FROM.
-                // Or, handle it by creating a LogicalAggregateOperator with no child or a
-                // special one.
+
             }
-            // If no aggregates and no FROM, it could be SELECT 1, 'abc';
-            // This could be a LogicalProjectOperator with a special "dummy" child or no
-            // child.
-            // For simplicity, we'll require a FROM for now or throw an error.
+
             throw new DBException(ExceptionTypes.UnsupportedCommand("SELECT without FROM: " + plainSelect.toString()));
         }
 
@@ -136,8 +124,7 @@ public class LogicalPlanner {
         int depth = 0;
         if (plainSelect.getJoins() != null) {
             for (Join join : plainSelect.getJoins()) {
-                // 确定 JOIN 类型
-                LogicalJoinOperator.JoinType joinType = LogicalJoinOperator.JoinType.INNER; // 默认为 INNER JOIN
+                LogicalJoinOperator.JoinType joinType = LogicalJoinOperator.JoinType.INNER; 
 
                 if (join.isLeft()) {
                     joinType = LogicalJoinOperator.JoinType.LEFT;
@@ -183,19 +170,13 @@ public class LogicalPlanner {
             groupByExpressions = plainSelect.getGroupBy().getGroupByExpressions();
         }
 
-        // 先应用聚合，再投影
-        // 如果有聚合函数，先处理聚合操作（在原始数据上）
         if (hasAggregates || (groupByExpressions != null && !groupByExpressions.isEmpty())) {
             root = new LogicalAggregateOperator(root, plainSelect.getSelectItems(), groupByExpressions);
         }
-        // 然后应用投影
-        // 注意：对于聚合查询，LogicalAggregateOperator已经处理了投影
-        // 只有在非聚合查询时才需要额外的投影操作
         if (!hasAggregates && (groupByExpressions == null || groupByExpressions.isEmpty())) {
             root = new LogicalProjectOperator(root, plainSelect.getSelectItems());
         }
 
-        // 添加ORDER BY支持
         if (plainSelect.getOrderByElements() != null && !plainSelect.getOrderByElements().isEmpty()) {
             root = new LogicalOrderByOperator(root, plainSelect.getOrderByElements());
         }

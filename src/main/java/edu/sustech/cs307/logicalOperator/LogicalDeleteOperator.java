@@ -36,10 +36,7 @@ public class LogicalDeleteOperator extends LogicalOperator {
         String conditionStr = whereExpr != null ? ", condition=" + whereExpr : "";
         String nodeHeader = "LogicalDeleteOperator(table=" + tableName + conditionStr + ")";
 
-        // 当前节点
         sb.append(nodeHeader);
-
-        // 递归显示子操作符
         if (!childern.isEmpty()) {
             LogicalOperator child = childern.get(0);
             String childStr = child.toString();

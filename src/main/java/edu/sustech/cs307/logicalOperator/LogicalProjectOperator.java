@@ -59,10 +59,8 @@ public class LogicalProjectOperator extends LogicalOperator {
         String nodeHeader = "ProjectOperator(selectItems=" + selectItems + ")";
         String[] childLines = child.toString().split("\\R");
 
-        // 当前节点
         sb.append(nodeHeader);
 
-        // 子节点处理
         if (childLines.length > 0) {
             sb.append("\n└── ").append(childLines[0]);
             for (int i = 1; i < childLines.length; i++) {

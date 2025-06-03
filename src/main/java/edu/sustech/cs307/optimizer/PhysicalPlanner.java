@@ -72,25 +72,19 @@ public class PhysicalPlanner {
         String tableName = logicalTableScanOp.getTableName();
         TableMeta tableMeta = dbManager.getMetaManager().getTable(tableName);
 
-        // 检查表是否有可用的索引，优先使用索引进行全表扫描
         if (tableMeta.getIndexes() != null && !tableMeta.getIndexes().isEmpty()) {
-            // 选择第一个可用的索引进行全表扫描（可以进一步优化选择策略）
             String firstIndexedColumn = tableMeta.getIndexes().keySet().iterator().next();
 
             try {
-                // 尝试获取或创建索引
                 Index index = dbManager.getIndexManager().getIndex(tableName, firstIndexedColumn);
 
                 if (index == null && tableMeta.getIndexes().containsKey(firstIndexedColumn)) {
-                    // 尝试创建B+树索引
                     index = dbManager.getIndexManager().createIndex(tableName, firstIndexedColumn);
                     Logger.info("Created new B+Tree index for full table scan on {}.{}", tableName,
                             firstIndexedColumn);
                 }
 
-                // 如果成功获得索引，使用索引进行全表扫描
                 if (index != null) {
-                    // 使用HybridScanOperator，但不指定搜索键（全表扫描）
                     Logger.info("Using HybridScanOperator for full table scan on table {} with index on column {}",
                             tableName, firstIndexedColumn);
                     return new HybridScanOperator(tableName, firstIndexedColumn, null, dbManager, index);
@@ -98,11 +92,9 @@ public class PhysicalPlanner {
             } catch (DBException e) {
                 Logger.warn("Failed to use index for table scan on {}: {}, falling back to SeqScan",
                         tableName, e.getMessage());
-                // 如果索引操作失败，继续使用顺序扫描
             }
         }
 
-        // 如果没有索引或索引操作失败，使用传统的顺序扫描
         Logger.info("Using SeqScanOperator for table {} (no suitable index available)", tableName);
         return new SeqScanOperator(tableName, dbManager);
     }
@@ -138,18 +130,14 @@ public class PhysicalPlanner {
                 if (queryColumn != null && constantValue != null) {
                     String columnName = queryColumn.getColumnName();
 
-                    // 首先尝试从IndexManager获取现有索引
                     Index index = dbManager.getIndexManager().getIndex(tableName, columnName);
 
-                    // 如果IndexManager中没有，检查元数据中是否定义了索引
                     if (index == null && tableMeta.getIndexes() != null
                             && tableMeta.getIndexes().containsKey(columnName)) {
-                        // 尝试创建B+树索引
                         index = dbManager.getIndexManager().createIndex(tableName, columnName);
                         Logger.info("Created new B+Tree index for {}.{}", tableName, columnName);
                     }
 
-                    // 使用混合扫描器，它会智能地选择索引扫描或顺序扫描
                     if (index != null) {
                         Logger.info("Using HybridScanOperator for table {} on column {} with search key {}",
                                 tableName, columnName, constantValue);
@@ -339,13 +327,10 @@ public class PhysicalPlanner {
 
     private static PhysicalOperator handleUpdate(DBManager dbManager, LogicalUpdateOperator logicalUpdateOp)
             throws DBException {
-        // 对于UPDATE操作，强制使用SeqScanOperator，不使用索引扫描
-        // 因为UpdateOperator期望接收SeqScanOperator作为输入
         LogicalOperator child = logicalUpdateOp.getChild();
         PhysicalOperator scanner;
 
         if (child instanceof LogicalFilterOperator) {
-            // 如果有WHERE条件，先创建SeqScan，然后应用过滤器
             LogicalFilterOperator filterOp = (LogicalFilterOperator) child;
             String tableName = logicalUpdateOp.getTableName();
 
@@ -354,13 +339,11 @@ public class PhysicalPlanner {
 
             Logger.info("Using SeqScanOperator with FilterOperator for UPDATE on table {}", tableName);
         } else if (child instanceof LogicalTableScanOperator) {
-            // 直接表扫描，强制使用SeqScan
             String tableName = ((LogicalTableScanOperator) child).getTableName();
             scanner = new SeqScanOperator(tableName, dbManager);
 
             Logger.info("Using SeqScanOperator for UPDATE on table {}", tableName);
         } else {
-            // 其他情况，使用默认处理但确保最终是SeqScan
             PhysicalOperator generatedOp = generateOperator(dbManager, child);
             if (!(generatedOp instanceof SeqScanOperator) && !(generatedOp instanceof FilterOperator)) {
                 throw new DBException(ExceptionTypes.InvalidOperation(

@@ -18,7 +18,6 @@ import org.pmw.tinylog.Logger;
 
 import java.util.Map;
 import java.util.Set;
-import java.util.HashMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class IndexManager {

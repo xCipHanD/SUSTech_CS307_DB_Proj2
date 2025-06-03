@@ -3,6 +3,7 @@ package edu.sustech.cs307.physicalOperator;
 import edu.sustech.cs307.exception.DBException;
 import edu.sustech.cs307.exception.ExceptionTypes;
 import edu.sustech.cs307.meta.ColumnMeta;
+import edu.sustech.cs307.meta.TabCol;
 import edu.sustech.cs307.meta.TableMeta;
 import edu.sustech.cs307.system.DBManager;
 import edu.sustech.cs307.tuple.TempTuple;
@@ -132,7 +133,7 @@ public class InsertOperator implements PhysicalOperator {
     }
 
     /**
-     * 批量检查主键冲突 - 性能优化版本
+     * 批量检查主键冲突
      */
     private boolean batchCheckPrimaryKeyConflict(TableMeta tableMeta, String primaryKeyColumn,
             Set<Value> primaryKeyValues)
@@ -175,7 +176,7 @@ public class InsertOperator implements PhysicalOperator {
                 seqScan.Next();
                 var tuple = seqScan.Current();
                 if (tuple != null) {
-                    var tabCol = new edu.sustech.cs307.meta.TabCol(tableMeta.tableName, primaryKeyColumn);
+                    var tabCol = new TabCol(tableMeta.tableName, primaryKeyColumn);
                     Value existingValue = tuple.getValue(tabCol);
                     if (existingValue != null && primaryKeyValues.contains(existingValue)) {
                         seqScan.Close();

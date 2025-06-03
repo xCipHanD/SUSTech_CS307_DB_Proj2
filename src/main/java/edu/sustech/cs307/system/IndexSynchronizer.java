@@ -7,7 +7,11 @@ import edu.sustech.cs307.meta.MetaManager;
 import edu.sustech.cs307.record.RID;
 import edu.sustech.cs307.record.Record;
 import edu.sustech.cs307.value.Value;
+import edu.sustech.cs307.value.ValueType;
 import edu.sustech.cs307.meta.ColumnMeta;
+
+import java.nio.charset.StandardCharsets;
+
 import org.pmw.tinylog.Logger;
 
 /**
@@ -145,9 +149,6 @@ public class IndexSynchronizer {
                 Index newIndex = indexManager.createIndex(tableName, columnName);
                 Logger.info("Successfully rebuilt index for {}.{}", tableName, columnName);
 
-                // 注意：在实际实现中，这里需要遍历表中的所有记录并重新插入到索引中
-                // 这通常需要与RecordManager配合完成
-
             } catch (DBException e) {
                 Logger.error("Failed to rebuild index for {}.{}: {}", tableName, columnName, e.getMessage());
                 throw e;
@@ -158,16 +159,16 @@ public class IndexSynchronizer {
     /**
      * 将ByteBuf转换为Value对象
      */
-    private Value convertByteBufToValue(io.netty.buffer.ByteBuf byteBuf, edu.sustech.cs307.value.ValueType columnType)
+    private Value convertByteBufToValue(io.netty.buffer.ByteBuf byteBuf, ValueType columnType)
             throws DBException {
-        if (columnType == edu.sustech.cs307.value.ValueType.INTEGER) {
+        if (columnType == ValueType.INTEGER) {
             return new Value(byteBuf.getLong(0));
-        } else if (columnType == edu.sustech.cs307.value.ValueType.CHAR) {
+        } else if (columnType == ValueType.CHAR) {
             return new Value(byteBuf
-                    .getCharSequence(0, byteBuf.readableBytes(), java.nio.charset.StandardCharsets.UTF_8).toString());
-        } else if (columnType == edu.sustech.cs307.value.ValueType.FLOAT) {
+                    .getCharSequence(0, byteBuf.readableBytes(), StandardCharsets.UTF_8).toString());
+        } else if (columnType == ValueType.FLOAT) {
             return new Value(byteBuf.getFloat(0));
-        } else if (columnType == edu.sustech.cs307.value.ValueType.DOUBLE) {
+        } else if (columnType == ValueType.DOUBLE) {
             return new Value(byteBuf.getDouble(0));
         } else {
             throw new DBException(

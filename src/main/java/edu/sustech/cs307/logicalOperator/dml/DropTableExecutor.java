@@ -26,7 +26,6 @@ public class DropTableExecutor implements DMLExecutor {
         String dataFileName = tableName + "/data";
 
         try {
-            // 新增：在删除表之前清理所有相关索引
             cleanupTableIndexes(tableName);
             
             dbManager.getBufferPool().DeleteAllPages(dataFileName);
@@ -47,7 +46,6 @@ public class DropTableExecutor implements DMLExecutor {
         try {
             TableMeta tableMeta = dbManager.getMetaManager().getTable(tableName);
             if (tableMeta != null && tableMeta.getIndexes() != null) {
-                // 清理所有列的索引
                 for (String columnName : tableMeta.getIndexes().keySet()) {
                     if (dbManager.getIndexManager() != null) {
                         boolean dropped = dbManager.getIndexManager().dropIndex(tableName, columnName);
@@ -59,7 +57,6 @@ public class DropTableExecutor implements DMLExecutor {
             }
         } catch (DBException e) {
             Logger.warn("Failed to cleanup indexes for table {}: {}", tableName, e.getMessage());
-            // 继续执行删除表操作，即使索引清理失败
         }
     }
 }

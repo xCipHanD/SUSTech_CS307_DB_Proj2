@@ -26,7 +26,7 @@ public class TableMeta {
     // 新增：索引名称到列名的映射
     private Map<String, String> indexNameToColumn; // 索引名 -> 列名
 
-    private Map<String, Integer> column_rank;
+    // private Map<String, Integer> column_rank;
 
     public enum IndexType {
         BTREE
@@ -121,6 +121,7 @@ public class TableMeta {
      * 
      * @return 主键列名，如果没有主键则返回null
      */
+    @JsonIgnore
     public String getPrimaryKeyColumn() {
         if (indexes == null || indexes.isEmpty()) {
             return null;
@@ -206,6 +207,7 @@ public class TableMeta {
      * 
      * @return 索引名称集合
      */
+    @JsonIgnore
     public Set<String> getIndexNames() {
         if (this.indexNameToColumn == null) {
             return new HashSet<>();

@@ -90,10 +90,8 @@ public class CreateTableExecutor implements DMLExecutor {
 
         if (indexColumnName != null) {
             try {
-                // 获取刚创建的表的元数据
                 TableMeta tableMeta = dbManager.getMetaManager().getTable(table);
                 if (tableMeta != null) {
-                    // 为选定的列添加索引定义
                     Map<String, TableMeta.IndexType> indexes = tableMeta.getIndexes();
                     if (indexes == null) {
                         indexes = new HashMap<>();
@@ -101,7 +99,6 @@ public class CreateTableExecutor implements DMLExecutor {
                     indexes.put(indexColumnName, TableMeta.IndexType.BTREE);
                     tableMeta.setIndexes(indexes);
 
-                    // 保存元数据
                     dbManager.getMetaManager().saveToJson();
 
                     try {

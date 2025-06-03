@@ -30,7 +30,6 @@ public class LogicalOrderByOperator extends LogicalOperator {
         StringBuilder sb = new StringBuilder();
         sb.append("LogicalOrderByOperator(orderBy=").append(orderByElements).append(")");
 
-        // 递归显示子操作符
         if (!childern.isEmpty()) {
             LogicalOperator child = childern.get(0);
             String childStr = child.toString();

@@ -241,13 +241,23 @@ public class DBManager {
             Map<String, Object> columnInfo = new HashMap<>();
             columnInfo.put("Field", columnMeta.name);
             columnInfo.put("Type", columnMeta.type.toString().toUpperCase());
-            String keyValue = "";
-            if (tableMeta.isPrimaryKey(columnMeta.name)) {
-                keyValue = "PRIMARY KEY";
-            } else if (tableMeta.getIndexes() != null && tableMeta.getIndexes().containsKey(columnMeta.name)) {
-                keyValue = "MUL";
+
+            String indexValue = "";
+
+            if (tableMeta.getIndexNameToColumn() != null) {
+                for (Map.Entry<String, String> entry : tableMeta.getIndexNameToColumn().entrySet()) {
+                    if (entry.getValue().equals(columnMeta.name)) {
+                        indexValue = entry.getKey(); // 返回索引名称
+                        break;
+                    }
+                }
             }
-            columnInfo.put("Key", keyValue);
+
+            if (indexValue.isEmpty() && tableMeta.isPrimaryKey(columnMeta.name)) {
+                indexValue = "primary key";
+            }
+
+            columnInfo.put("Index", indexValue);
             columns.add(columnInfo);
         }
         return columns;

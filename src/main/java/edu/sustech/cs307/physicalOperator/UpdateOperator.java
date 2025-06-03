@@ -39,7 +39,6 @@ public class UpdateOperator implements PhysicalOperator {
 
     public UpdateOperator(PhysicalOperator inputOperator, String tableName, List<UpdateSet> updateSetList,
             Expression whereExpr, DBManager dbManager) {
-        // UpdateOperator 现在可以接受 SeqScanOperator 或 FilterOperator 作为输入
         if (inputOperator instanceof SeqScanOperator seqScanOperator) {
             this.seqScanOperator = seqScanOperator;
         } else if (inputOperator instanceof FilterOperator filterOperator) {
@@ -86,11 +85,9 @@ public class UpdateOperator implements PhysicalOperator {
         seqScanOperator.Begin();
         RecordFileHandle fileHandle = seqScanOperator.getFileHandle();
 
-        // 获取表元数据和主键信息
         var tableMeta = dbManager.getMetaManager().getTable(tableName);
         String primaryKeyColumn = tableMeta.getPrimaryKeyColumn();
 
-        // 获取索引同步器
         IndexSynchronizer indexSynchronizer = new IndexSynchronizer(
                 dbManager.getIndexManager(),
                 dbManager.getMetaManager());
@@ -100,28 +97,21 @@ public class UpdateOperator implements PhysicalOperator {
             TableTuple tuple = (TableTuple) seqScanOperator.Current();
 
             if (whereExpr == null || tuple.eval_expr(whereExpr)) {
-                // 获取更新前的记录用于索引同步
                 Record oldRecord = fileHandle.GetRecord(tuple.getRID());
 
                 Value[] oldValues = tuple.getValues();
                 List<Value> newValues = new ArrayList<>(Arrays.asList(oldValues));
                 TabCol[] schema = tuple.getTupleSchema();
 
-                // 记录主键是否被更新以及新的主键值
                 boolean primaryKeyUpdated = false;
                 Value newPrimaryKeyValue = null;
 
                 for (UpdateSet currentUpdateSet : this.updateSetList) {
                     List<Column> columnsToUpdate = currentUpdateSet.getColumns();
-                    // Corrected: JSqlParser's UpdateSet has getValues() which returns an
-                    // ExpressionList,
-                    // and ExpressionList has getExpressions() to get the List<Expression>.
                     ExpressionList<Expression> newExpressions = (ExpressionList<Expression>) currentUpdateSet
                             .getValues();
 
                     if (columnsToUpdate.size() != newExpressions.size()) {
-                        // This case should ideally be caught by the parser or an earlier validation
-                        // step
                         throw new DBException(ExceptionTypes.InvalidSQL("UPDATE",
                                 "Column and value counts do not match in an UPDATE SET clause"));
                     }
@@ -135,9 +125,6 @@ public class UpdateOperator implements PhysicalOperator {
                         if (column.getTable() != null && column.getTable().getName() != null) {
                             targetTable = column.getTable().getName();
                         } else {
-                            // If table is not specified in "SET table.column = ...", assume the table being
-                            // updated.
-                            // For "SET column = ...", table will be null here.
                             targetTable = tuple.getTableName();
                         }
 
@@ -159,7 +146,6 @@ public class UpdateOperator implements PhysicalOperator {
                                 targetColumnName);
                         newValues.set(index, newValue);
 
-                        // 检查是否更新了主键列
                         if (primaryKeyColumn != null && targetColumnName.equalsIgnoreCase(primaryKeyColumn)) {
                             primaryKeyUpdated = true;
                             newPrimaryKeyValue = newValue;

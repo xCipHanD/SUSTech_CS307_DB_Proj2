@@ -60,10 +60,8 @@ public class LogicalJoinOperator extends LogicalOperator {
         String[] leftLines = leftInput.toString().split("\\R");
         String[] rightLines = rightInput.toString().split("\\R");
 
-        // 当前节点
         sb.append(nodeHeader);
 
-        // 左子树处理
         if (leftLines.length > 0) {
             sb.append("\n├── ").append(leftLines[0]);
             for (int i = 1; i < leftLines.length; i++) {
@@ -71,7 +69,6 @@ public class LogicalJoinOperator extends LogicalOperator {
             }
         }
 
-        // 右子树处理
         if (rightLines.length > 0) {
             sb.append("\n└── ").append(rightLines[0]);
             for (int i = 1; i < rightLines.length; i++) {

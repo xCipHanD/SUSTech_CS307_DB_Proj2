@@ -5,7 +5,6 @@ import edu.sustech.cs307.exception.ExceptionTypes;
 import edu.sustech.cs307.meta.TabCol;
 import edu.sustech.cs307.value.Value;
 
-import java.util.ArrayList;
 import java.util.List;
 
 public class TempTuple extends Tuple {

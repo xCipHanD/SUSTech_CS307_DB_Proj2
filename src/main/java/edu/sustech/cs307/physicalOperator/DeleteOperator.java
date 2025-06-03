@@ -100,20 +100,16 @@ public class DeleteOperator implements PhysicalOperator {
                 if (tuple instanceof TableTuple tableTuple) {
                     RID rid = tableTuple.getRID();
                     if (rid != null && fileHandle.IsRecord(rid)) {
-                        // 在删除前获取记录用于索引同步
                         Record recordToDelete = fileHandle.GetRecord(rid);
 
-                        // 删除记录
                         fileHandle.DeleteRecord(rid);
                         deletedCount++;
                         Logger.debug("Deleted record with RID: " + rid + " from table " + tableName);
 
-                        // 同步更新所有相关索引
                         try {
                             indexSynchronizer.onRecordDeleted(tableName, recordToDelete, rid);
                         } catch (DBException e) {
                             Logger.warn("Failed to update indexes after delete: {}", e.getMessage());
-                            // 继续执行，不因为索引更新失败而中断删除操作
                         }
                     } else {
                         Logger.warn("Skipping invalid RID or non-existent record: " + rid + " in table " + tableName);

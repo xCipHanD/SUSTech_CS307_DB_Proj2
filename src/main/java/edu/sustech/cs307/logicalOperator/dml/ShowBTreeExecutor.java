@@ -24,23 +24,19 @@ public class ShowBTreeExecutor implements DMLExecutor {
 
     @Override
     public void execute() throws DBException {
-        // 检查表是否存在
         if (!dbManager.isTableExists(tableName)) {
             throw new DBException(ExceptionTypes.TableDoesNotExist(tableName));
         }
 
-        // 获取指定表和列的索引，但不创建新的索引
         Index index = dbManager.getIndexManager().getIndex(tableName, columnName);
 
         if (index == null) {
-            // 如果索引不存在，直接报错，不尝试创建
             throw new DBException(ExceptionTypes.UnsupportedCommand(
                     String.format(
                             "No index exists for table '%s' column '%s'. Please create an index first using CREATE INDEX.",
                             tableName, columnName)));
         }
 
-        // 检查索引是否为B+树类型
         if (!(index instanceof BPlusTreeIndex)) {
             throw new DBException(ExceptionTypes.UnsupportedCommand(
                     String.format("Index for table '%s' column '%s' is not a B+ Tree index. Index type: %s",
@@ -49,14 +45,12 @@ public class ShowBTreeExecutor implements DMLExecutor {
 
         BPlusTreeIndex bTreeIndex = (BPlusTreeIndex) index;
 
-        // 检查B+树是否有数据
         if (bTreeIndex.getRoot() == null) {
             throw new DBException(ExceptionTypes.UnsupportedCommand(
                     String.format("B+ Tree index for table '%s' column '%s' is empty. No data to display.",
                             tableName, columnName)));
         }
 
-        // 生成B+树显示结果
         this.displayResult = generateBTreeDisplay(bTreeIndex);
     }
 
@@ -66,7 +60,6 @@ public class ShowBTreeExecutor implements DMLExecutor {
     private String generateBTreeDisplay(BPlusTreeIndex bTreeIndex) {
         StringBuilder result = new StringBuilder();
 
-        // 添加标题和边框
         result.append("╔══════════════════════════════════════════════════════════════════════════════╗\n");
         result.append("║                          B+ Tree Structure Display                           ║\n");
         result.append("╠══════════════════════════════════════════════════════════════════════════════╣\n");
@@ -75,7 +68,6 @@ public class ShowBTreeExecutor implements DMLExecutor {
         result.append("╚══════════════════════════════════════════════════════════════════════════════╝\n");
         result.append("\n");
 
-        // 显示B+树结构
         if (bTreeIndex.getRoot() == null) {
             result.append("┌─────────────────────┐\n");
             result.append("│   B+ Tree is Empty  │\n");
@@ -84,13 +76,11 @@ public class ShowBTreeExecutor implements DMLExecutor {
             result.append("B+ Tree Structure:\n");
             result.append("==================\n");
 
-            // 使用BPlusTreeIndex的getTreeString()方法
             String treeStructure = bTreeIndex.getTreeString();
             result.append(treeStructure);
 
             result.append("\n");
 
-            // 显示树的验证状态
             boolean isValid = bTreeIndex.validateTree();
             if (isValid) {
                 result.append("✓ B+ Tree structure is VALID\n");

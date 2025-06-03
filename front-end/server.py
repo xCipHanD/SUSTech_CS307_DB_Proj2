@@ -30,4 +30,4 @@ if __name__ == "__main__":
     print("📄 确保你的数据库服务器(DBEntry)正在端口8080上运行")
     print("=" * 50)
 
-    app.run(host="0.0.0.0", port=3000, debug=True, use_reloader=True)
+    app.run(host="0.0.0.0", port=3000)

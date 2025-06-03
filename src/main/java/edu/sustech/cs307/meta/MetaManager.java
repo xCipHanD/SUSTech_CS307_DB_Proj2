@@ -120,28 +120,23 @@ public class MetaManager {
     public void reorganizeTableData(String tableName, TableMeta oldTableMeta, TableMeta newTableMeta)
             throws DBException {
         try {
-            // 计算旧表的记录大小
             int oldRecordSize = 0;
             for (ColumnMeta column : oldTableMeta.columns_list) {
                 oldRecordSize += column.len;
             }
 
-            // 计算新表的记录大小
             int newRecordSize = 0;
             for (ColumnMeta column : newTableMeta.columns_list) {
                 newRecordSize += column.len;
             }
 
-            // 1. 验证重组的必要性
             if (oldRecordSize == newRecordSize) {
                 Logger.debug("Table {} structure unchanged, skipping data reorganization", tableName);
                 return;
             }
 
-            // 2. 更新表元数据
             tables.put(tableName, newTableMeta);
 
-            // 3. 保存元数据变更
             saveToJson();
 
             Logger.info("Table {} metadata updated for ALTER TABLE operation", tableName);
