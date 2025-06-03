@@ -161,6 +161,11 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
                     case "SUM":
                         aggregateValues.put(key, null);
                         break;
+                    case "AVG":
+                        // AVG需要存储总和和计数
+                        aggregateValues.put(key + "_SUM", null);
+                        aggregateValues.put(key + "_COUNT", 0L);
+                        break;
                     case "MIN":
                     case "MAX":
                         aggregateValues.put(key, null);
@@ -188,6 +193,9 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
                         case "SUM":
                             updateSum(aggregateValues, key, func, tuple);
                             break;
+                        case "AVG":
+                            updateAvg(aggregateValues, key, func, tuple);
+                            break;
                         case "MIN":
                             updateMin(aggregateValues, key, func, tuple);
                             break;
@@ -202,8 +210,23 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
         for (SelectItem<?> item : selectItems) {
             if (item.getExpression() instanceof Function func) {
                 String key = func.toString();
-                Object aggValue = aggregateValues.get(key);
-                row.add(convertToValue(aggValue, func));
+                String funcName = func.getName().toUpperCase();
+
+                if ("AVG".equals(funcName)) {
+                    // 对于AVG，需要从aggregateValues中获取总和和计数
+                    Object sum = aggregateValues.get(key + "_SUM");
+                    Long count = (Long) aggregateValues.get(key + "_COUNT");
+
+                    if (sum == null || count == null || count == 0) {
+                        row.add(new Value(null, ValueType.DOUBLE));
+                    } else {
+                        double average = convertToDouble(sum) / count;
+                        row.add(new Value(average, ValueType.DOUBLE));
+                    }
+                } else {
+                    Object aggValue = aggregateValues.get(key);
+                    row.add(convertToValue(aggValue, func));
+                }
             } else {
                 row.add(new Value(null, ValueType.UNKNOWN));
             }
@@ -250,6 +273,11 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
                             case "MAX":
                                 groupAggregates.put(key, null);
                                 break;
+                            case "AVG":
+                                // AVG需要存储总和和计数
+                                groupAggregates.put(key + "_SUM", null);
+                                groupAggregates.put(key + "_COUNT", 0L);
+                                break;
                         }
                     }
 
@@ -260,6 +288,9 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
                             break;
                         case "SUM":
                             updateSum(groupAggregates, key, func, currentTuple);
+                            break;
+                        case "AVG":
+                            updateAvg(groupAggregates, key, func, currentTuple);
                             break;
                         case "MIN":
                             updateMin(groupAggregates, key, func, currentTuple);
@@ -284,8 +315,23 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
                 if (item.getExpression() instanceof Function func) {
                     // 聚合函数
                     String key = func.toString();
-                    Object aggValue = groupAggregates.get(key);
-                    finalRow.add(convertToValue(aggValue, func));
+                    String funcName = func.getName().toUpperCase();
+
+                    if ("AVG".equals(funcName)) {
+                        // 对于AVG，需要计算总和/计数
+                        Object sum = groupAggregates.get(key + "_SUM");
+                        Long count = (Long) groupAggregates.get(key + "_COUNT");
+
+                        if (sum == null || count == null || count == 0) {
+                            finalRow.add(new Value(null, ValueType.DOUBLE));
+                        } else {
+                            double average = convertToDouble(sum) / count;
+                            finalRow.add(new Value(average, ValueType.DOUBLE));
+                        }
+                    } else {
+                        Object aggValue = groupAggregates.get(key);
+                        finalRow.add(convertToValue(aggValue, func));
+                    }
                 } else if (item.getExpression() instanceof Column col) {
                     // GROUP BY列
                     // 找到这个列在GROUP BY表达式中的位置
@@ -343,6 +389,31 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
                     Object currentSum = aggregates.get(key);
                     Object newSum = addValues(currentSum, val);
                     aggregates.put(key, newSum);
+                }
+            }
+        }
+    }
+
+    /**
+     * 更新AVG聚合
+     */
+    private void updateAvg(Map<String, Object> aggregates, String key, Function func, Tuple tuple) throws DBException {
+        if (func.getParameters() != null && func.getParameters().getExpressions() != null
+                && !func.getParameters().getExpressions().isEmpty()) {
+            Expression paramExpr = func.getParameters().getExpressions().get(0);
+            if (paramExpr instanceof Column column) {
+                Value val = tuple.evaluateExpression(column);
+                if (val != null && !val.isNull()) {
+                    // 更新SUM
+                    String sumKey = key + "_SUM";
+                    Object currentSum = aggregates.get(sumKey);
+                    Object newSum = addValues(currentSum, val);
+                    aggregates.put(sumKey, newSum);
+
+                    // 更新COUNT
+                    String countKey = key + "_COUNT";
+                    Long count = (Long) aggregates.get(countKey);
+                    aggregates.put(countKey, count + 1);
                 }
             }
         }
@@ -522,6 +593,29 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
     private Value convertToValue(Object aggValue, Function func) {
         String funcName = func.getName().toUpperCase();
 
+        // 特殊处理AVG函数
+        if ("AVG".equals(funcName)) {
+            // 对于AVG，需要计算总和/计数
+            String key = func.toString();
+            if (aggValue instanceof Map) {
+                // 从分组聚合的aggregates map中获取
+                @SuppressWarnings("unchecked")
+                Map<String, Object> aggregates = (Map<String, Object>) aggValue;
+                Object sum = aggregates.get(key + "_SUM");
+                Long count = (Long) aggregates.get(key + "_COUNT");
+
+                if (sum == null || count == null || count == 0) {
+                    return new Value(null, ValueType.DOUBLE);
+                }
+
+                double average = convertToDouble(sum) / count;
+                return new Value(average, ValueType.DOUBLE);
+            } else {
+                // 这种情况不应该发生，但为了安全起见
+                return new Value(null, ValueType.DOUBLE);
+            }
+        }
+
         if (aggValue == null) {
             // 对于没有数据的情况
             switch (funcName) {
@@ -544,6 +638,21 @@ public class PhysicalAggregateOperator implements PhysicalOperator {
         }
 
         return new Value(null, inferAggregateType(func));
+    }
+
+    /**
+     * 将对象转换为double值，用于AVG计算
+     */
+    private double convertToDouble(Object obj) {
+        if (obj instanceof Long) {
+            return ((Long) obj).doubleValue();
+        } else if (obj instanceof Float) {
+            return ((Float) obj).doubleValue();
+        } else if (obj instanceof Double) {
+            return (Double) obj;
+        } else {
+            throw new RuntimeException("Cannot convert " + obj.getClass().getSimpleName() + " to double");
+        }
     }
 
     private ColumnMeta findColumnMeta(Column column, ArrayList<ColumnMeta> searchSchema) {
