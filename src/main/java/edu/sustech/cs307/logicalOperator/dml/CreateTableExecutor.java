@@ -3,6 +3,7 @@ package edu.sustech.cs307.logicalOperator.dml;
 import edu.sustech.cs307.exception.DBException;
 import edu.sustech.cs307.exception.ExceptionTypes;
 import edu.sustech.cs307.meta.ColumnMeta;
+import edu.sustech.cs307.meta.TableMeta;
 import edu.sustech.cs307.system.DBManager;
 import edu.sustech.cs307.value.Value;
 import edu.sustech.cs307.value.ValueType;
@@ -11,10 +12,10 @@ import net.sf.jsqlparser.statement.create.table.ColDataType;
 import org.pmw.tinylog.Logger;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 
 public class CreateTableExecutor implements DMLExecutor {
-    // Logger Logger = LoggerFactory.getLogger(CreateTableExecutor.class); //
-    // Removed SLF4j LoggerFactory
 
     private final CreateTable createTableStmt;
     private final DBManager dbManager;
@@ -34,19 +35,40 @@ public class CreateTableExecutor implements DMLExecutor {
         if (null == createTableStmt.getColumnDefinitions()) {
             throw new DBException(ExceptionTypes.TableHasNoColumn(table));
         }
+
+        String primaryKeyColumnName = null;
+
         for (var col : createTableStmt.getColumnDefinitions()) {
-            // transform the column definition to ColumnMeta
-            // we only accept the char, int, float type
             String colName = col.getColumnName();
+            boolean isPrimaryKey = false;
+            if (col.getColumnSpecs() != null) {
+                for (String spec : col.getColumnSpecs()) {
+                    if ("PRIMARY_KEY".equalsIgnoreCase(spec)) {
+                        isPrimaryKey = true;
+                        break;
+                    }
+                }
+            }
+
             if (colName.isEmpty() || colName.length() > 16) {
                 throw new DBException(
                         ExceptionTypes.InvalidSQL(sql, String.format("INVALID COLUMN NAME = %s", colName)));
             }
+
+            if (isPrimaryKey) {
+                if (primaryKeyColumnName != null) {
+                    throw new DBException(ExceptionTypes.InvalidSQL(sql,
+                            "Only one column can be set as primary key/index in current implementation"));
+                }
+                primaryKeyColumnName = colName;
+            }
+
             ColDataType colType = col.getColDataType();
             if (colType.getDataType().equalsIgnoreCase("char")) {
                 colMapping.add(new ColumnMeta(table, colName, ValueType.CHAR, Value.CHAR_SIZE, offset));
                 offset += Value.CHAR_SIZE;
-            } else if (colType.getDataType().equalsIgnoreCase("int")) {
+            } else if (colType.getDataType().equalsIgnoreCase("int")
+                    || colType.getDataType().equalsIgnoreCase("integer")) {
                 colMapping.add(new ColumnMeta(table, colName, ValueType.INTEGER, Value.INT_SIZE, offset));
                 offset += Value.INT_SIZE;
             } else if (colType.getDataType().equalsIgnoreCase("float")) {
@@ -60,8 +82,50 @@ public class CreateTableExecutor implements DMLExecutor {
                         String.format("CREATE TABLE %s with unsupported type %s", table, colType.getDataType())));
             }
         }
+
+        // 创建表
         dbManager.createTable(table, colMapping);
-        Logger.info("Successfully created table: {}", table); // Modified to Tinylog format
+
+        String indexColumnName = primaryKeyColumnName;
+
+        if (indexColumnName != null) {
+            try {
+                TableMeta tableMeta = dbManager.getMetaManager().getTable(table);
+                if (tableMeta != null) {
+                    Map<String, TableMeta.IndexType> indexes = tableMeta.getIndexes();
+                    if (indexes == null) {
+                        indexes = new HashMap<>();
+                    }
+                    indexes.put(indexColumnName, TableMeta.IndexType.BTREE);
+                    tableMeta.setIndexes(indexes);
+
+                    dbManager.getMetaManager().saveToJson();
+
+                    try {
+                        dbManager.getIndexManager().createIndex(table, indexColumnName);
+                        Logger.info("Successfully created table: {} with B+Tree index on column: {}", 
+                                table, indexColumnName);
+                    } catch (DBException indexException) {
+                        Logger.warn("Failed to create actual B+Tree index for {}.{}: {}", 
+                                table, indexColumnName, indexException.getMessage());
+                        Logger.info("Table {} created with index metadata but no actual index instance", table);
+                    }
+
+                    if (primaryKeyColumnName != null) {
+                        Logger.info("Successfully created table: {} with index on primary key column: {}",
+                                table, indexColumnName);
+                    } else {
+                        Logger.info("Successfully created table: {} with index on first column: {}",
+                                table, indexColumnName);
+                    }
+                }
+            } catch (DBException e) {
+                Logger.warn("Failed to create index definition for {}.{}: {}", table, indexColumnName, e.getMessage());
+                Logger.info("Successfully created table: {} (without index)", table);
+            }
+        } else {
+            Logger.info("Successfully created table: {}", table);
+        }
     }
 
 }

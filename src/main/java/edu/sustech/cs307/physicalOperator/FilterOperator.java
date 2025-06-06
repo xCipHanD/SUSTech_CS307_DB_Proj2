@@ -14,7 +14,6 @@ public class FilterOperator implements PhysicalOperator {
     private Expression whereExpr;
     private Tuple currentTuple;
     private boolean isOpen = false;
-    // 标记是否已经准备好下一个元组
     private boolean readyForNext = false;
 
     public FilterOperator(PhysicalOperator child, Expression whereExpr) {
@@ -24,7 +23,6 @@ public class FilterOperator implements PhysicalOperator {
 
     public FilterOperator(PhysicalOperator child, Collection<Expression> whereExpr) {
         this.child = child;
-        // 只使用第一个表达式，简化逻辑
         this.whereExpr = whereExpr.iterator().next();
     }
 
@@ -35,8 +33,6 @@ public class FilterOperator implements PhysicalOperator {
         isOpen = true;
         currentTuple = null;
         readyForNext = false;
-
-        // 在Begin后我们不主动查找第一个元组，而是等待hasNext()调用
     }
 
     @Override
@@ -46,12 +42,9 @@ public class FilterOperator implements PhysicalOperator {
             return false;
         }
 
-        // 如果我们还没有准备好下一个元组，就尝试找一个
         if (!readyForNext) {
             return findNext();
         }
-
-        // 如果已经准备好，且currentTuple不为null，则说明有下一个
         return currentTuple != null;
     }
 
@@ -62,12 +55,10 @@ public class FilterOperator implements PhysicalOperator {
             return;
         }
 
-        // 如果没有准备好，先准备
         if (!readyForNext) {
             hasNext(); // 这会调用findNext()来准备下一个元组
         }
 
-        // 清除已准备状态，表示需要准备下一个元组
         readyForNext = false;
     }
 
@@ -80,12 +71,10 @@ public class FilterOperator implements PhysicalOperator {
         // 标记没有找到合适的元组
         currentTuple = null;
 
-        // 循环直到找到匹配的元组或没有更多元组
         while (child.hasNext()) {
             child.Next();
             Tuple tuple = child.Current();
 
-            // 如果元组不为空且满足条件，则设置为当前元组并标记为已准备好
             if (tuple != null && tuple.eval_expr(whereExpr)) {
                 Logger.debug("FilterOperator找到匹配的元组: " + tuple);
                 currentTuple = tuple;
@@ -93,8 +82,6 @@ public class FilterOperator implements PhysicalOperator {
                 return true;
             }
         }
-
-        // 没有找到匹配的元组
         Logger.debug("FilterOperator没有找到更多匹配的元组");
         return false;
     }
@@ -106,7 +93,7 @@ public class FilterOperator implements PhysicalOperator {
     }
 
     @Override
-    public void Close() {
+    public void Close() throws DBException {
         if (child != null) {
             child.Close();
         }

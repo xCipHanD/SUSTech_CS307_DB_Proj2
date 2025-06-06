@@ -15,7 +15,7 @@ public interface PhysicalOperator {
 
     Tuple Current();
 
-    void Close();
+    void Close() throws DBException;
 
     ArrayList<ColumnMeta> outputSchema();
 }

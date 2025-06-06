@@ -12,15 +12,18 @@ import org.pmw.tinylog.Logger;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 public class DBManager {
     private final MetaManager metaManager;
-    /* --- --- --- */
     private final DiskManager diskManager;
     private final BufferPool bufferPool;
     private final RecordManager recordManager;
+    private final IndexManager indexManager; // 添加IndexManager
+    private final IndexSynchronizer indexSynchronizer; // 添加索引同步器
 
     public DBManager(DiskManager diskManager, BufferPool bufferPool, RecordManager recordManager,
             MetaManager metaManager) {
@@ -28,6 +31,8 @@ public class DBManager {
         this.bufferPool = bufferPool;
         this.recordManager = recordManager;
         this.metaManager = metaManager;
+        this.indexManager = new IndexManager(metaManager, recordManager); // 传入RecordManager引用
+        this.indexSynchronizer = new IndexSynchronizer(indexManager, metaManager); // 初始化IndexSynchronizer
     }
 
     public BufferPool getBufferPool() {
@@ -44,6 +49,14 @@ public class DBManager {
 
     public MetaManager getMetaManager() {
         return metaManager;
+    }
+
+    public IndexManager getIndexManager() {
+        return indexManager;
+    }
+
+    public IndexSynchronizer getIndexSynchronizer() {
+        return indexSynchronizer;
     }
 
     public boolean isDirExists(String dir) {
@@ -198,5 +211,55 @@ public class DBManager {
         this.bufferPool.FlushAllPages("");
         DiskManager.dump_disk_manager_meta(this.diskManager);
         this.metaManager.saveToJson();
+    }
+
+    /**
+     * 获取数据库中所有表的名称列表（用于HTTP API）
+     * 
+     * @return 包含所有表名的列表
+     */
+    public List<String> getTableNamesList() {
+        return new ArrayList<>(metaManager.getTableNames());
+    }
+
+    /**
+     * 获取指定表的列信息（用于HTTP API）
+     * 
+     * @param table_name 表名
+     * @return 包含列信息的列表，每个元素是包含列名和类型的Map
+     * @throws DBException 如果表不存在
+     */
+    public List<Map<String, Object>> getTableColumns(String table_name) throws DBException {
+        if (!isTableExists(table_name)) {
+            throw new DBException(ExceptionTypes.TableDoesNotExist(table_name));
+        }
+        TableMeta tableMeta = metaManager.getTable(table_name);
+        List<ColumnMeta> colList = tableMeta.columns_list;
+
+        List<Map<String, Object>> columns = new ArrayList<>();
+        for (ColumnMeta columnMeta : colList) {
+            Map<String, Object> columnInfo = new HashMap<>();
+            columnInfo.put("Field", columnMeta.name);
+            columnInfo.put("Type", columnMeta.type.toString().toUpperCase());
+
+            String indexValue = "";
+
+            if (tableMeta.getIndexNameToColumn() != null) {
+                for (Map.Entry<String, String> entry : tableMeta.getIndexNameToColumn().entrySet()) {
+                    if (entry.getValue().equals(columnMeta.name)) {
+                        indexValue = entry.getKey(); // 返回索引名称
+                        break;
+                    }
+                }
+            }
+
+            if (indexValue.isEmpty() && tableMeta.isPrimaryKey(columnMeta.name)) {
+                indexValue = "primary key";
+            }
+
+            columnInfo.put("Index", indexValue);
+            columns.add(columnInfo);
+        }
+        return columns;
     }
 }

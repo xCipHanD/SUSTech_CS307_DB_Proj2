@@ -34,21 +34,52 @@ public class LogicalAggregateOperator extends LogicalOperator {
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();
-        sb.append("LogicalAggregateOperator(aggregates=").append(aggregateExpressions);
-        if (groupByExpressions != null && !groupByExpressions.isEmpty()) {
-            sb.append(", groupBy=").append(groupByExpressions);
+        sb.append("LogicalAggregateOperator(");
+
+        // 详细显示聚合表达式
+        if (aggregateExpressions != null && !aggregateExpressions.isEmpty()) {
+            sb.append("aggregates=[");
+            for (int i = 0; i < aggregateExpressions.size(); i++) {
+                SelectItem<?> item = aggregateExpressions.get(i);
+                if (i > 0)
+                    sb.append(", ");
+
+                if (item.getAlias() != null) {
+                    sb.append(item.getExpression()).append(" AS ").append(item.getAlias().getName());
+                } else {
+                    sb.append(item.getExpression());
+                }
+            }
+            sb.append("]");
         }
+
+        // 详细显示分组表达式
+        if (groupByExpressions != null && !groupByExpressions.isEmpty()) {
+            if (aggregateExpressions != null && !aggregateExpressions.isEmpty()) {
+                sb.append(", ");
+            }
+            sb.append("groupBy=[");
+            for (int i = 0; i < groupByExpressions.size(); i++) {
+                if (i > 0)
+                    sb.append(", ");
+                sb.append(groupByExpressions.get(i));
+            }
+            sb.append("]");
+        }
+
         sb.append(")");
 
+        // 递归显示子操作符，保持与其他操作符一致的树状格式
         if (child != null) {
             String[] childLines = child.toString().split("\\R");
             if (childLines.length > 0) {
                 sb.append("\n└── ").append(childLines[0]);
                 for (int i = 1; i < childLines.length; i++) {
-                    sb.append("\n    ").append(childLines[i]);
+                    sb.append("\n\t").append(childLines[i]);
                 }
             }
         }
+
         return sb.toString();
     }
 }

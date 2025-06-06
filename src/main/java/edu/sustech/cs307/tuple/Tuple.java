@@ -69,8 +69,17 @@ public abstract class Tuple {
                 }
                 rightValue = tuple.getValue(new TabCol(table_name, rightColumn.getColumnName()));
             } else {
-                rightValue = getConstantValue(rightExpr); // Handle constant right value
-
+                // 智能类型推断：如果左边是列，根据列的类型来决定右边常量的类型
+                if (leftExpr instanceof Column leftColumn) {
+                    String table_name = leftColumn.getTableName();
+                    if (tuple instanceof TableTuple) {
+                        TableTuple tableTuple = (TableTuple) tuple;
+                        table_name = tableTuple.getTableName();
+                    }
+                    rightValue = getConstantValueWithTypeHint(rightExpr, table_name, leftColumn.getColumnName(), tuple);
+                } else {
+                    rightValue = getConstantValue(rightExpr); // Handle constant right value
+                }
             }
 
             if (leftValue == null || rightValue == null)
@@ -108,21 +117,117 @@ public abstract class Tuple {
         return null; // Unsupported constant type
     }
 
+    /**
+     * 根据列类型提示来推断常量的正确类型
+     * 这解决了 SQL parser 将所有小数都解析为 double 的问题
+     */
+    private Value getConstantValueWithTypeHint(Expression expr, String tableName, String columnName, Tuple tuple)
+            throws DBException {
+        if (expr instanceof StringValue) {
+            return new Value(((StringValue) expr).getValue(), ValueType.CHAR);
+        } else if (expr instanceof LongValue) {
+            return new Value(((LongValue) expr).getValue(), ValueType.INTEGER);
+        } else if (expr instanceof DoubleValue doubleValue) {
+            // 关键：根据列的类型来决定常量的类型
+            ValueType columnType = getColumnType(tableName, columnName, tuple);
+            double value = doubleValue.getValue();
+
+            if (columnType == ValueType.FLOAT) {
+                return new Value((float) value, ValueType.FLOAT);
+            } else if (columnType == ValueType.DOUBLE) {
+                return new Value(value, ValueType.DOUBLE);
+            } else if (columnType == ValueType.INTEGER) {
+                return new Value((long) value, ValueType.INTEGER);
+            } else {
+                // 如果无法确定列类型，默认使用 DOUBLE
+                return new Value(value, ValueType.DOUBLE);
+            }
+        }
+        return null; // Unsupported constant type
+    }
+
+    /**
+     * 获取指定列的数据类型
+     */
+    private ValueType getColumnType(String tableName, String columnName, Tuple tuple) throws DBException {
+        if (tuple instanceof TableTuple tableTuple) {
+            // 从 TableTuple 的 tableMeta 中获取列类型
+            try {
+                TabCol tabCol = new TabCol(tableName, columnName);
+                Value columnValue = tuple.getValue(tabCol);
+                if (columnValue != null) {
+                    return columnValue.type;
+                }
+            } catch (Exception e) {
+                // 如果获取失败，尝试从 schema 中推断
+            }
+        }
+
+        // 从 tuple 的 schema 中查找列类型
+        TabCol[] schema = tuple.getTupleSchema();
+        if (schema != null) {
+            for (TabCol tabCol : schema) {
+                if (tabCol.getColumnName().equalsIgnoreCase(columnName) &&
+                        (tableName == null || tabCol.getTableName() == null ||
+                                tabCol.getTableName().equalsIgnoreCase(tableName))) {
+                    // 尝试获取该列的值来确定类型
+                    try {
+                        Value value = tuple.getValue(tabCol);
+                        if (value != null) {
+                            return value.type;
+                        }
+                    } catch (Exception e) {
+                        // 忽略错误，继续查找
+                    }
+                }
+            }
+        }
+
+        // 无法确定类型，返回 UNKNOWN
+        return ValueType.UNKNOWN;
+    }
+
     public Value evaluateExpression(Expression expr) throws DBException {
         if (expr instanceof StringValue) {
             return new Value(((StringValue) expr).getValue(), ValueType.CHAR);
-        } else if (expr instanceof DoubleValue) {
-            return new Value(((DoubleValue) expr).getValue(), ValueType.DOUBLE);
+        } else if (expr instanceof DoubleValue doubleValue) {
+            // 对于 DoubleValue，我们需要更智能的类型推断
+            // 但在 evaluateExpression 中我们没有列类型的上下文，所以先返回 DOUBLE
+            // 具体的类型推断会在调用处处理
+            return new Value(doubleValue.getValue(), ValueType.DOUBLE);
         } else if (expr instanceof LongValue) {
             return new Value(((LongValue) expr).getValue(), ValueType.INTEGER);
         } else if (expr instanceof Column) {
             Column col = (Column) expr;
-            return getValue(new TabCol(col.getTableName(), col.getColumnName()));
+            String tableName = col.getTableName();
+            String columnName = col.getColumnName();
+
+            // 如果表名为null，尝试从当前tuple的schema中推断
+            if (tableName == null) {
+                // 对于TableTuple，使用其表名
+                if (this instanceof TableTuple) {
+                    TableTuple tableTuple = (TableTuple) this;
+                    tableName = tableTuple.getTableName();
+                } else {
+                    // 对于其他类型的tuple，尝试在schema中查找列名
+                    TabCol[] schema = getTupleSchema();
+                    for (TabCol tabCol : schema) {
+                        if (tabCol.getColumnName().equalsIgnoreCase(columnName)) {
+                            tableName = tabCol.getTableName();
+                            break;
+                        }
+                    }
+                }
+            }
+
+            TabCol tabCol = new TabCol(tableName, columnName);
+            Value result = getValue(tabCol);
+            return result;
         } else if (expr instanceof Function) {
             Function function = (Function) expr;
             String functionName = function.getName();
             // function.getParameters() returns a raw ExpressionList
-            ExpressionList expressionList = function.getParameters();
+            ExpressionList<?> expressionList = function.getParameters();
 
             if (functionName.equalsIgnoreCase("float")) {
                 if (expressionList != null && !expressionList.isEmpty()) {
@@ -191,10 +296,45 @@ public abstract class Tuple {
                 } else { // INTEGER
                     return new Value((long) sum, ValueType.INTEGER);
                 }
-            }
-            else {
+            } else {
                 throw new DBException(ExceptionTypes.UnsupportedExpression(expr));
             }
+        } else {
+            throw new DBException(ExceptionTypes.UnsupportedExpression(expr));
+        }
+    }
+
+    /**
+     * 为 UPDATE 语句提供带类型提示的表达式求值
+     * 根据目标列的类型来推断常量的正确类型
+     */
+    public Value evaluateExpressionWithTypeHint(Expression expr, String targetTableName, String targetColumnName)
+            throws DBException {
+        if (expr instanceof StringValue) {
+            return new Value(((StringValue) expr).getValue(), ValueType.CHAR);
+        } else if (expr instanceof LongValue) {
+            return new Value(((LongValue) expr).getValue(), ValueType.INTEGER);
+        } else if (expr instanceof DoubleValue doubleValue) {
+            // 根据目标列的类型来决定常量的类型
+            ValueType columnType = getColumnType(targetTableName, targetColumnName, this);
+            double value = doubleValue.getValue();
+
+            if (columnType == ValueType.FLOAT) {
+                return new Value((float) value, ValueType.FLOAT);
+            } else if (columnType == ValueType.DOUBLE) {
+                return new Value(value, ValueType.DOUBLE);
+            } else if (columnType == ValueType.INTEGER) {
+                return new Value((long) value, ValueType.INTEGER);
+            } else {
+                // 如果无法确定列类型，默认使用 DOUBLE
+                return new Value(value, ValueType.DOUBLE);
+            }
+        } else if (expr instanceof Column) {
+            // 对于列引用，使用标准的 evaluateExpression
+            return evaluateExpression(expr);
+        } else if (expr instanceof Function) {
+            // 对于函数，使用标准的 evaluateExpression
+            return evaluateExpression(expr);
         } else {
             throw new DBException(ExceptionTypes.UnsupportedExpression(expr));
         }

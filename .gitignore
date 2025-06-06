@@ -31,3 +31,8 @@ replay_pid*
 CS307-DB/**
 
 target/
+
+.vscode/
+
+*.sql
+*.json

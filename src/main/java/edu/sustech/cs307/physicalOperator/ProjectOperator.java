@@ -61,7 +61,7 @@ public class ProjectOperator implements PhysicalOperator {
     }
 
     @Override
-    public void Close() {
+    public void Close() throws DBException {
         child.Close();
         currentTuple = null;
     }
