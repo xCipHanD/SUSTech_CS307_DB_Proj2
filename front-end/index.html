@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CS307 数据库管理系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .sidebar {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+            height: fit-content;
+        }
+
+        .sidebar h3 {
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .database-info {
+            margin-bottom: 25px;
+        }
+
+        .database-name {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 4px solid #667eea;
+        }
+
+        .tables-list {
+            list-style: none;
+        }
+
+        .tables-list li {
+            padding: 8px 12px;
+            margin: 5px 0;
+            background: #f8f9fa;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border-left: 3px solid transparent;
+        }
+
+        .tables-list li:hover {
+            background: #e9ecef;
+            border-left-color: #667eea;
+            transform: translateX(5px);
+        }
+
+        .refresh-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+            margin-top: 10px;
+        }
+
+        .refresh-btn:hover {
+            background: #5a6fd8;
+        }
+
+        .sql-section {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .sql-input-container {
+            margin-bottom: 20px;
+        }
+
+        .sql-input-container h3 {
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .sql-textarea {
+            width: 100%;
+            height: 200px;
+            padding: 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            resize: vertical;
+            transition: border-color 0.3s ease;
+        }
+
+        .sql-textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+
+        .execute-btn {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .execute-btn:hover {
+            background: #218838;
+            transform: translateY(-2px);
+        }
+
+        .execute-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .clear-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .clear-btn:hover {
+            background: #c82333;
+        }
+
+        .shortcut-hint {
+            color: #6c757d;
+            font-size: 14px;
+            margin-left: auto;
+        }
+
+        .results-section {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            grid-column: 1 / -1;
+        }
+
+        .results-section h3 {
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+
+        .loading::after {
+            content: '';
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 4px solid #dc3545;
+            margin: 10px 0;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 4px solid #28a745;
+            margin: 10px 0;
+        }
+
+        .result-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .result-table th {
+            background: #667eea;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .result-table td {
+            padding: 12px;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .result-table tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+
+        .result-table tr:hover {
+            background: #e9ecef;
+        }
+
+        .result-meta {
+            background: #f8f9fa;
+            padding: 10px 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            color: #6c757d;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .execution-time {
+            background: #e3f2fd;
+            color: #1976d2;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 12px;
+            border: 1px solid #bbdefb;
+        }
+
+        .execution-time.fast {
+            background: #e8f5e8;
+            color: #2e7d32;
+            border-color: #c8e6c9;
+        }
+
+        .execution-time.medium {
+            background: #fff3e0;
+            color: #f57c00;
+            border-color: #ffcc02;
+        }
+
+        .execution-time.slow {
+            background: #ffebee;
+            color: #d32f2f;
+            border-color: #ffcdd2;
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+            font-style: italic;
+        }
+
+        .batch-summary {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #6c757d;
+        }
+
+        .batch-summary.success {
+            background: #d4edda;
+            border-left-color: #28a745;
+        }
+
+        .batch-summary.error {
+            background: #f8d7da;
+            border-left-color: #dc3545;
+        }
+
+        .batch-summary.partial-success {
+            background: #fff3cd;
+            border-left-color: #ffc107;
+        }
+
+        .batch-summary h4 {
+            margin: 0 0 15px 0;
+            color: #333;
+            font-size: 1.2em;
+        }
+
+        .summary-stats {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+
+        .summary-stats .stat {
+            padding: 5px 12px;
+            background: rgba(255, 255, 255, 0.7);
+            border-radius: 4px;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .success-count {
+            color: #155724;
+            background: rgba(40, 167, 69, 0.1) !important;
+        }
+
+        .error-count {
+            color: #721c24;
+            background: rgba(220, 53, 69, 0.1) !important;
+        }
+
+        .summary-message {
+            font-weight: 500;
+            margin-bottom: 10px;
+        }
+
+        .error-summary {
+            background: rgba(220, 53, 69, 0.1);
+            padding: 10px;
+            border-radius: 4px;
+            color: #721c24;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        .statements-results {
+            margin-top: 20px;
+        }
+
+        .statement-result {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .statement-header {
+            padding: 12px 15px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .statement-header.success {
+            background: rgba(40, 167, 69, 0.1);
+            border-bottom-color: rgba(40, 167, 69, 0.2);
+        }
+
+        .statement-header.error {
+            background: rgba(220, 53, 69, 0.1);
+            border-bottom-color: rgba(220, 53, 69, 0.2);
+        }
+
+        .statement-number {
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .statement-status {
+            font-size: 12px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            background: rgba(0, 0, 0, 0.1);
+            color: #666;
+            font-weight: 500;
+        }
+
+        .statement-sql {
+            padding: 15px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .statement-sql code {
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            background: transparent;
+            color: #333;
+            display: block;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .statement-meta {
+            padding: 8px 15px;
+            background: rgba(102, 126, 234, 0.1);
+            color: #495057;
+            font-size: 13px;
+            font-weight: 500;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .statement-message {
+            padding: 15px;
+        }
+
+        .statement-message.success {
+            background: rgba(40, 167, 69, 0.1);
+            color: #155724;
+        }
+
+        .statement-message.error {
+            background: rgba(220, 53, 69, 0.1);
+            color: #721c24;
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+
+            .container {
+                padding: 10px;
+            }
+
+            .header h1 {
+                font-size: 2em;
+            }
+
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .shortcut-hint {
+                margin-left: 0;
+                text-align: center;
+            }
+        }
+
+        .btree-display {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 10px;
+            overflow-x: auto;
+        }
+
+        .btree-structure {
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            white-space: pre;
+            word-wrap: normal;
+            color: #333;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🗃️ CS307 数据库管理系统</h1>
+            <p>交互式 SQL 查询界面</p>
+        </div>
+
+        <div class="main-content">
+            <!-- 侧边栏 - 数据库信息 -->
+            <div class="sidebar">
+                <div class="database-info">
+                    <h3>📊 数据库信息</h3>
+                    <div class="database-name">
+                        <strong>数据库名：</strong>CS307-DB
+                    </div>
+                </div>
+
+                <div class="tables-section">
+                    <h3>📋 数据表列表</h3>
+                    <ul class="tables-list" id="tablesList">
+                        <li class="no-results">正在加载...</li>
+                    </ul>
+                    <button class="refresh-btn" onclick="loadTables()">🔄 刷新表列表</button>
+                </div>
+            </div>
+
+            <!-- SQL 输入区域 -->
+            <div class="sql-section">
+                <div class="sql-input-container">
+                    <h3>💻 SQL 查询</h3>
+                    <textarea class="sql-textarea" id="sqlInput"
+                        placeholder="请输入您的 SQL 查询语句...&#10;&#10;示例：&#10;SHOW TABLES;&#10;SELECT * FROM students;&#10;CREATE TABLE test (id INT, name CHAR);&#10;SHOW BTREE table_name column_name;&#10;&#10;提示：使用 Ctrl+Enter 快速执行"></textarea>
+                </div>
+
+                <div class="controls">
+                    <button class="execute-btn" id="executeBtn" onclick="executeSQL()">
+                        ▶️ 执行查询
+                    </button>
+                    <button class="clear-btn" onclick="clearSQL()">
+                        🗑️ 清空
+                    </button>
+                    <div class="sql-templates">
+                        <select id="templateSelect" onchange="insertSQLTemplate()">
+                            <option value="">选择 SQL 模板...</option>
+                            <option value="SHOW TABLES;">显示所有表</option>
+                            <option value="DESC table_name;">描述表结构</option>
+                            <option value="SELECT * FROM table_name;">查询表数据</option>
+                            <option value="SHOW BTREE table_name column_name;">显示B+树结构</option>
+                            <option value="CREATE TABLE test_table (id INT, name CHAR);">创建测试表</option>
+                            <option value="INSERT INTO table_name VALUES (1, 'test');">插入数据</option>
+                        </select>
+                    </div>
+                    <span class="shortcut-hint">快捷键：Ctrl + Enter</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 结果显示区域 -->
+        <div class="results-section">
+            <h3>📈 查询结果</h3>
+            <div id="resultsContainer">
+                <div class="no-results">等待执行 SQL 查询...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        const API_BASE_URL = 'http://localhost:8080';
+        let isExecuting = false;
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function () {
+            loadTables();
+            setupKeyboardShortcuts();
+        });
+
+        // 设置键盘快捷键
+        function setupKeyboardShortcuts() {
+            document.getElementById('sqlInput').addEventListener('keydown', function (e) {
+                if (e.ctrlKey && e.key === 'Enter') {
+                    e.preventDefault();
+                    executeSQL();
+                }
+            });
+        }
+
+        // 加载数据表列表
+        async function loadTables() {
+            const tablesList = document.getElementById('tablesList');
+            tablesList.innerHTML = '<li class="no-results">正在加载...</li>';
+
+            try {
+                const response = await fetch(`${API_BASE_URL}?sql=SHOW TABLES;`);
+                const data = await response.json();
+
+                if (data.status === 'success' && data.data && data.data.length > 0) {
+                    tablesList.innerHTML = '';
+                    data.data.forEach(row => {
+                        const tableName = Object.values(row)[0];
+                        if (tableName) {
+                            const li = document.createElement('li');
+                            li.textContent = tableName;
+                            li.onclick = () => insertTableName(tableName);
+                            li.title = `点击插入表名：${tableName}`;
+                            tablesList.appendChild(li);
+                        }
+                    });
+                } else {
+                    tablesList.innerHTML = '<li class="no-results">暂无数据表</li>';
+                }
+            } catch (error) {
+                console.error('加载表列表失败:', error);
+                tablesList.innerHTML = '<li class="no-results">加载失败</li>';
+            }
+        }
+
+        // 插入表名到 SQL 输入框
+        function insertTableName(tableName) {
+            const sqlInput = document.getElementById('sqlInput');
+            const cursorPos = sqlInput.selectionStart;
+            const textBefore = sqlInput.value.substring(0, cursorPos);
+            const textAfter = sqlInput.value.substring(cursorPos);
+
+            sqlInput.value = textBefore + tableName + textAfter;
+            sqlInput.focus();
+            sqlInput.setSelectionRange(cursorPos + tableName.length, cursorPos + tableName.length);
+        }
+
+        // 处理包含换行符和转义字符的文本，将其转换为HTML格式
+        function formatMessageText(text) {
+            if (!text) return '';
+
+            // 首先处理转义字符，然后再转义HTML
+            const processedText = text
+                .replace(/\\n/g, '\n')      // 将 \\n 转换为真正的换行符
+                .replace(/\\t/g, '\t')      // 将 \\t 转换为真正的制表符
+                .replace(/\\r/g, '\r')      // 将 \\r 转换为回车符
+                .replace(/\\\\/g, '\\');    // 将 \\\\ 转换为单个反斜杠
+
+            // 然后转义HTML特殊字符
+            const escapedText = escapeHtml(processedText);
+
+            // 最后将换行符和制表符转换为HTML格式
+            return escapedText
+                .replace(/\n/g, '<br>')
+                .replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;');
+        }
+
+        // 简化的显示查询结果函数
+        function displayResults(data, sql) {
+            const resultsContainer = document.getElementById('resultsContainer');
+
+            // 检查是否是SHOW BTREE命令
+            if (sql && sql.trim().toUpperCase().startsWith('SHOW BTREE')) {
+                if (data.status === 'success') {
+                    displayBTreeResult(data, sql);
+                    return;
+                } else {
+                    showError(data.message, data.executionTimeMs);
+                    return;
+                }
+            }
+
+            // 处理错误状态
+            if (data.status === 'error') {
+                showError(data.message, data.executionTimeMs);
+                return;
+            }
+
+            // 处理批量执行结果
+            if (data.results && Array.isArray(data.results)) {
+                displayBatchResults(data, sql);
+                return;
+            }
+
+            // 处理单条SQL执行结果
+            displaySingleResult(data, sql);
+        }
+
+        // 新增：处理单条SQL结果的函数
+        function displaySingleResult(data, sql) {
+            const resultsContainer = document.getElementById('resultsContainer');
+            let html = '';
+
+            // 显示执行信息
+            html += createResultMeta(data, sql);
+
+            // 显示数据或消息
+            if (data.data && data.data.length > 0) {
+                html += createDataTable(data.data);
+            } else if (data.message) {
+                html += `<div class="success">${formatMessageText(data.message)}</div>`;
+            } else {
+                html += '<div class="no-results">查询执行成功，但无返回数据</div>';
+            }
+
+            resultsContainer.innerHTML = html;
+        }
+
+        // 新增：创建结果元信息的函数
+        function createResultMeta(data, sql) {
+            let html = '<div class="result-meta">';
+            html += '<strong>执行成功</strong>';
+
+            if (sql && sql.length <= 100) {
+                html += ` | 查询语句：${formatMessageText(sql)}`;
+            }
+
+            if (data.rowCount !== undefined) {
+                html += ` | 返回行数：${data.rowCount}`;
+            }
+
+            if (data.executionTimeMs !== undefined) {
+                html += ` | ${formatExecutionTime(data.executionTimeMs)}`;
+            }
+
+            html += '</div>';
+            return html;
+        }
+
+        // 简化的批量结果显示函数
+        function displayBatchResults(data, originalSql) {
+            const resultsContainer = document.getElementById('resultsContainer');
+            let html = '';
+
+            // 显示批量执行摘要
+            html += createBatchSummary(data);
+
+            // 显示每个语句的结果
+            if (data.results && data.results.length > 0) {
+                html += '<div class="statements-results">';
+                data.results.forEach(result => {
+                    html += createStatementResult(result);
+                });
+                html += '</div>';
+            }
+
+            resultsContainer.innerHTML = html;
+        }
+
+        // 新增：创建批量摘要的函数
+        function createBatchSummary(data) {
+            const statusClass = data.status === 'success' ? 'success' :
+                data.status === 'error' ? 'error' : 'partial-success';
+
+            return `<div class="batch-summary ${statusClass}">
+                <h4>📊 批量执行摘要</h4>
+                <div class="summary-stats">
+                    <span class="stat">总语句数：${data.totalStatements}</span>
+                    <span class="stat success-count">成功：${data.successCount}</span>
+                    ${data.errorCount > 0 ? `<span class="stat error-count">失败：${data.errorCount}</span>` : ''}
+                </div>
+                <div class="summary-message">${formatMessageText(data.message)}</div>
+                ${data.errors ? `<div class="error-summary">错误详情：${formatMessageText(data.errors)}</div>` : ''}
+            </div>`;
+        }
+
+        // 新增：创建单个语句结果的函数
+        function createStatementResult(result) {
+            const statusIcon = (result.status === 'success' || result.status === 'help') ? '✅' : '❌';
+            const statusClass = (result.status === 'success' || result.status === 'help') ? 'success' : 'error';
+
+            let html = `<div class="statement-result">
+                <div class="statement-header ${statusClass}">
+                    <span class="statement-number">${statusIcon} 语句 ${result.statementIndex}</span>
+                    <span class="statement-status">${result.status.toUpperCase()}</span>
+                </div>
+                <div class="statement-sql">
+                    <code>${formatMessageText(result.sql)}</code>
+                </div>`;
+
+            if (result.status === 'success' || result.status === 'help') {
+                if (result.data && result.data.length > 0) {
+                    html += `<div class="statement-meta">返回 ${result.rowCount || result.data.length} 行数据</div>`;
+                    html += createDataTable(result.data);
+                } else if (result.message) {
+                    html += `<div class="statement-message success">${formatMessageText(result.message)}</div>`;
+                }
+            } else {
+                html += `<div class="statement-message error">${formatMessageText(result.message)}</div>`;
+            }
+
+            html += '</div>';
+            return html;
+        }
+
+        // 新增：创建数据表格的函数
+        function createDataTable(data) {
+            if (!data || data.length === 0) {
+                return '<div class="no-results">无数据</div>';
+            }
+
+            const columns = Object.keys(data[0]);
+            let html = '<table class="result-table">';
+
+            // 表头
+            html += '<thead><tr>';
+            columns.forEach(col => {
+                html += `<th>${formatMessageText(col)}</th>`;
+            });
+            html += '</tr></thead>';
+
+            // 表体
+            html += '<tbody>';
+            data.forEach(row => {
+                html += '<tr>';
+                columns.forEach(col => {
+                    const cellValue = row[col];
+                    const displayValue = cellValue === null || cellValue === undefined ?
+                        '(null)' : String(cellValue);
+                    html += `<td>${formatMessageText(displayValue)}</td>`;
+                });
+                html += '</tr>';
+            });
+            html += '</tbody></table>';
+
+            return html;
+        }
+
+        // 清空 SQL 输入
+        function clearSQL() {
+            document.getElementById('sqlInput').value = '';
+            document.getElementById('sqlInput').focus();
+        }
+
+        // 转义 HTML 特殊字符
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // 常用 SQL 模板
+        function insertSQLTemplate() {
+            const select = document.getElementById('templateSelect');
+            const template = select.value;
+            if (template) {
+                const sqlInput = document.getElementById('sqlInput');
+                sqlInput.value = template;
+                sqlInput.focus();
+
+                // 如果是SHOW BTREE模板，将光标定位到table_name处
+                if (template.includes('SHOW BTREE')) {
+                    const tableNameStart = template.indexOf('table_name');
+                    sqlInput.setSelectionRange(tableNameStart, tableNameStart + 'table_name'.length);
+                }
+
+                // 重置选择器
+                select.value = '';
+            }
+        }
+
+        // 显示错误信息
+        function showError(message, executionTime) {
+            const resultsContainer = document.getElementById('resultsContainer');
+            let html = `<div class="error">❌ ${formatMessageText(message)}`;
+
+            if (executionTime !== undefined) {
+                html += ` | ${formatExecutionTime(executionTime)}`;
+            }
+
+            html += '</div>';
+            resultsContainer.innerHTML = html;
+        }
+
+        // 格式化执行时间显示
+        function formatExecutionTime(timeMs) {
+            let timeClass = 'execution-time';
+            let timeText = '';
+
+            if (timeMs < 10) {
+                timeClass += ' fast';
+                timeText = `⚡ ${timeMs.toFixed(2)}ms`;
+            } else if (timeMs < 100) {
+                timeClass += ' medium';
+                timeText = `⏱️ ${timeMs.toFixed(2)}ms`;
+            } else {
+                timeClass += ' slow';
+                timeText = `🐌 ${timeMs.toFixed(2)}ms`;
+            }
+
+            return `<span class="${timeClass}">${timeText}</span>`;
+        }
+
+        // 简化的执行SQL函数
+        async function executeSQL() {
+            if (isExecuting) return;
+
+            const sql = getSQLInput();
+            if (!sql) {
+                showError('请输入 SQL 查询语句');
+                return;
+            }
+
+            try {
+                setExecutionState(true);
+                const data = await sendSQLRequest(sql);
+                displayResults(data, sql);
+                handlePostExecution(sql);
+            } catch (error) {
+                console.error('查询执行失败:', error);
+                showError('网络错误或服务器不可用');
+            } finally {
+                setExecutionState(false);
+            }
+        }
+
+        // 新增：获取SQL输入的函数
+        function getSQLInput() {
+            return document.getElementById('sqlInput').value.trim();
+        }
+
+        // 新增：设置执行状态的函数
+        function setExecutionState(executing) {
+            isExecuting = executing;
+            const executeBtn = document.getElementById('executeBtn');
+            executeBtn.disabled = executing;
+            executeBtn.innerHTML = executing ? '⏳ 执行中...' : '▶️ 执行查询';
+
+            if (executing) {
+                document.getElementById('resultsContainer').innerHTML = '<div class="loading">正在执行查询</div>';
+            }
+        }
+
+        // 新增：发送SQL请求的函数
+        async function sendSQLRequest(sql) {
+            const response = await fetch(API_BASE_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: `sql=${encodeURIComponent(sql)}`
+            });
+            return await response.json();
+        }
+
+        // 新增：处理执行后操作的函数
+        function handlePostExecution(sql) {
+            const lowerSql = sql.toLowerCase();
+            if (lowerSql.includes('create table') ||
+                lowerSql.includes('drop table') ||
+                lowerSql.includes('alter table')) {
+                setTimeout(loadTables, 500);
+            }
+        }
+
+        // 新增：专门处理B+树结果显示的函数
+        function displayBTreeResult(data, sql) {
+            const resultsContainer = document.getElementById('resultsContainer');
+            let html = '';
+
+            // 显示执行信息
+            html += createResultMeta(data, sql);
+
+            // B+树结果通常在message中包含树的文本表示
+            if (data.message) {
+                html += `<div class="btree-display">
+                    <h4>🌳 B+ Tree 结构</h4>
+                    <pre class="btree-structure">${formatMessageText(data.message)}</pre>
+                </div>`;
+            } else {
+                html += '<div class="no-results">未获取到B+树结构信息</div>';
+            }
+
+            resultsContainer.innerHTML = html;
+        }
+    </script>
+</body>
+
+</html>

@@ -5,6 +5,9 @@ import java.util.List;
 import java.util.function.Function;
 
 import edu.sustech.cs307.logicalOperator.dml.DropTableExecutor;
+import edu.sustech.cs307.logicalOperator.dml.AlterTableExecutor;
+import edu.sustech.cs307.logicalOperator.dml.CreateIndexExecutor;
+import edu.sustech.cs307.logicalOperator.dml.DropIndexExecutor;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.parser.CCJSqlParserManager;
 import net.sf.jsqlparser.parser.JSqlParser;
@@ -13,7 +16,9 @@ import net.sf.jsqlparser.statement.ExplainStatement;
 import net.sf.jsqlparser.statement.ShowColumnsStatement;
 import net.sf.jsqlparser.statement.ShowStatement;
 import net.sf.jsqlparser.statement.Statement;
+import net.sf.jsqlparser.statement.alter.Alter;
 import net.sf.jsqlparser.statement.drop.Drop;
+import net.sf.jsqlparser.statement.create.index.CreateIndex;
 import net.sf.jsqlparser.statement.select.*;
 import net.sf.jsqlparser.statement.show.ShowTablesStatement;
 import net.sf.jsqlparser.statement.update.Update;
@@ -49,8 +54,7 @@ public class LogicalPlanner {
             operator = handleInsert(dbManager, insertStmt);
         } else if (stmt instanceof Update updateStmt) {
             operator = handleUpdate(dbManager, updateStmt);
-        } // TODO: modify the delete operator
-        else if (stmt instanceof Delete deleteStmt) {
+        } else if (stmt instanceof Delete deleteStmt) {
             operator = handleDelete(dbManager, deleteStmt);
         }
         // functional
@@ -58,9 +62,23 @@ public class LogicalPlanner {
             CreateTableExecutor createTable = new CreateTableExecutor(createTableStmt, dbManager, sql);
             createTable.execute();
             return null;
-        } else if (stmt instanceof Drop dropTableStmt) {
-            DropTableExecutor dropTable = new DropTableExecutor(dropTableStmt, dbManager);
-            dropTable.execute();
+        } else if (stmt instanceof CreateIndex createIndexStmt) {
+            CreateIndexExecutor createIndex = new CreateIndexExecutor(createIndexStmt, dbManager);
+            createIndex.execute();
+            return null;
+        } else if (stmt instanceof Drop dropStmt) {
+            if (dropStmt.getType().equalsIgnoreCase("INDEX")) {
+                DropIndexExecutor dropIndex = new DropIndexExecutor(dropStmt, dbManager);
+                dropIndex.execute();
+                return null;
+            } else {
+                DropTableExecutor dropTable = new DropTableExecutor(dropStmt, dbManager);
+                dropTable.execute();
+                return null;
+            }
+        } else if (stmt instanceof Alter alterStmt) {
+            AlterTableExecutor alterTable = new AlterTableExecutor(alterStmt, dbManager);
+            alterTable.execute();
             return null;
         } else if (stmt instanceof ExplainStatement) {
             ExplainExecutor explainExecutor = new ExplainExecutor(dbManager, sql);
@@ -91,23 +109,13 @@ public class LogicalPlanner {
     public static LogicalOperator handleSelect(DBManager dbManager, Select selectStmt) throws DBException {
         PlainSelect plainSelect = selectStmt.getPlainSelect();
         if (plainSelect.getFromItem() == null) {
-            // Handle SELECT without FROM, e.g., SELECT 1+1;
-            // This might involve a special operator or direct evaluation.
-            // For now, let's assume it's not supported or needs a different path.
-            // If there are aggregate functions without FROM, it's also a special case.
+
             boolean hasAggregates = plainSelect.getSelectItems().stream()
                     .anyMatch(item -> item.getExpression() instanceof Function);
             if (hasAggregates) {
-                // Create a dummy operator that produces one row, if necessary, for global
-                // aggregates
-                // This part needs careful design. For now, let's assume aggregates need a FROM.
-                // Or, handle it by creating a LogicalAggregateOperator with no child or a
-                // special one.
+
             }
-            // If no aggregates and no FROM, it could be SELECT 1, 'abc';
-            // This could be a LogicalProjectOperator with a special "dummy" child or no
-            // child.
-            // For simplicity, we'll require a FROM for now or throw an error.
+
             throw new DBException(ExceptionTypes.UnsupportedCommand("SELECT without FROM: " + plainSelect.toString()));
         }
 
@@ -116,10 +124,26 @@ public class LogicalPlanner {
         int depth = 0;
         if (plainSelect.getJoins() != null) {
             for (Join join : plainSelect.getJoins()) {
+                LogicalJoinOperator.JoinType joinType = LogicalJoinOperator.JoinType.INNER; 
+
+                if (join.isLeft()) {
+                    joinType = LogicalJoinOperator.JoinType.LEFT;
+                } else if (join.isRight()) {
+                    joinType = LogicalJoinOperator.JoinType.RIGHT;
+                } else if (join.isCross()) {
+                    joinType = LogicalJoinOperator.JoinType.CROSS;
+                } else if (join.isInner() || join.isSimple()) {
+                    joinType = LogicalJoinOperator.JoinType.INNER;
+                } else {
+                    throw new DBException(
+                            ExceptionTypes.UnsupportedCommand("Unsupported JOIN type: " + join.toString()));
+                }
+
                 root = new LogicalJoinOperator(
                         root,
                         new LogicalTableScanOperator(join.getRightItem().toString(), dbManager),
                         join.getOnExpressions(),
+                        joinType,
                         depth);
                 depth += 1;
             }
@@ -146,12 +170,17 @@ public class LogicalPlanner {
             groupByExpressions = plainSelect.getGroupBy().getGroupByExpressions();
         }
 
-        // First project all select items
-        root = new LogicalProjectOperator(root, plainSelect.getSelectItems());
-        // Then apply aggregation if needed
         if (hasAggregates || (groupByExpressions != null && !groupByExpressions.isEmpty())) {
             root = new LogicalAggregateOperator(root, plainSelect.getSelectItems(), groupByExpressions);
         }
+        if (!hasAggregates && (groupByExpressions == null || groupByExpressions.isEmpty())) {
+            root = new LogicalProjectOperator(root, plainSelect.getSelectItems());
+        }
+
+        if (plainSelect.getOrderByElements() != null && !plainSelect.getOrderByElements().isEmpty()) {
+            root = new LogicalOrderByOperator(root, plainSelect.getOrderByElements());
+        }
+
         return root;
     }
 
@@ -161,7 +190,11 @@ public class LogicalPlanner {
     }
 
     private static LogicalOperator handleUpdate(DBManager dbManager, Update updateStmt) throws DBException {
-        LogicalOperator root = new LogicalTableScanOperator(updateStmt.getTable().getName(), dbManager);
+        LogicalTableScanOperator tableScan = new LogicalTableScanOperator(updateStmt.getTable().getName(), dbManager);
+        LogicalOperator root = tableScan;
+        if (updateStmt.getWhere() != null) {
+            root = new LogicalFilterOperator(root, updateStmt.getWhere());
+        }
         return new LogicalUpdateOperator(root, updateStmt.getTable().getName(), updateStmt.getUpdateSets(),
                 updateStmt.getWhere());
     }
@@ -171,15 +204,6 @@ public class LogicalPlanner {
         if (deleteStmt.getWhere() != null) {
             root = new LogicalFilterOperator(root, deleteStmt.getWhere());
         }
-        return new LogicalDeleteOperator(root, deleteStmt.getTable().getName(), deleteStmt.getWhere(), dbManager);//
-        // don't
-        // know
-        // is
-        // it
-        // right
-        // to
-        // use
-        // dbmanager
-        // here
+        return new LogicalDeleteOperator(root, deleteStmt.getTable().getName(), deleteStmt.getWhere(), dbManager);
     }
 }

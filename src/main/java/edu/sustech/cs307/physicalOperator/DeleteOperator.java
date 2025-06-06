@@ -3,8 +3,10 @@ package edu.sustech.cs307.physicalOperator;
 import edu.sustech.cs307.exception.DBException;
 import edu.sustech.cs307.meta.ColumnMeta;
 import edu.sustech.cs307.record.RID;
+import edu.sustech.cs307.record.Record;
 import edu.sustech.cs307.record.RecordFileHandle;
 import edu.sustech.cs307.system.DBManager;
+import edu.sustech.cs307.system.IndexSynchronizer;
 import edu.sustech.cs307.tuple.TableTuple;
 import edu.sustech.cs307.tuple.TempTuple;
 import edu.sustech.cs307.tuple.Tuple;
@@ -54,17 +56,20 @@ public class DeleteOperator implements PhysicalOperator {
             return false;
         }
         if (outputed) {
-            Logger.debug("DeleteOperator.hasNext() returning false: output tuple already produced for table " + tableName);
+            Logger.debug(
+                    "DeleteOperator.hasNext() returning false: output tuple already produced for table " + tableName);
             return false;
         }
         if (isComplete) {
-            Logger.debug("DeleteOperator.hasNext() returning true: deletions complete, ready to output tuple for table " + tableName);
+            Logger.debug("DeleteOperator.hasNext() returning true: deletions complete, ready to output tuple for table "
+                    + tableName);
             return true; // Allow one output tuple after deletions
         }
         boolean hasNext = child.hasNext();
         if (!hasNext) {
             isComplete = true;
-            Logger.debug("DeleteOperator.hasNext() setting isComplete: no more tuples to delete for table " + tableName);
+            Logger.debug(
+                    "DeleteOperator.hasNext() setting isComplete: no more tuples to delete for table " + tableName);
             return true; // Signal output tuple is ready
         }
         Logger.debug("DeleteOperator.hasNext() for table " + tableName + ": " + hasNext);
@@ -82,6 +87,12 @@ public class DeleteOperator implements PhysicalOperator {
             outputed = true; // Ensure output tuple is produced only once
             return;
         }
+
+        // 获取索引同步器
+        IndexSynchronizer indexSynchronizer = new IndexSynchronizer(
+                dbManager.getIndexManager(),
+                dbManager.getMetaManager());
+
         try {
             while (child.hasNext()) {
                 child.Next();
@@ -89,9 +100,17 @@ public class DeleteOperator implements PhysicalOperator {
                 if (tuple instanceof TableTuple tableTuple) {
                     RID rid = tableTuple.getRID();
                     if (rid != null && fileHandle.IsRecord(rid)) {
+                        Record recordToDelete = fileHandle.GetRecord(rid);
+
                         fileHandle.DeleteRecord(rid);
                         deletedCount++;
                         Logger.debug("Deleted record with RID: " + rid + " from table " + tableName);
+
+                        try {
+                            indexSynchronizer.onRecordDeleted(tableName, recordToDelete, rid);
+                        } catch (DBException e) {
+                            Logger.warn("Failed to update indexes after delete: {}", e.getMessage());
+                        }
                     } else {
                         Logger.warn("Skipping invalid RID or non-existent record: " + rid + " in table " + tableName);
                     }
@@ -100,7 +119,8 @@ public class DeleteOperator implements PhysicalOperator {
                 }
             }
             isComplete = true;
-            Logger.debug("DeleteOperator.Next() completed deletions for table " + tableName + ", deletedCount: " + deletedCount);
+            Logger.debug("DeleteOperator.Next() completed deletions for table " + tableName + ", deletedCount: "
+                    + deletedCount);
         } catch (DBException e) {
             Logger.error("Error processing next tuple for deletion in table " + tableName, e);
             throw e;
@@ -116,7 +136,8 @@ public class DeleteOperator implements PhysicalOperator {
         ArrayList<Value> values = new ArrayList<>();
         values.add(new Value(deletedCount, ValueType.INTEGER));
         outputed = true;
-        Logger.debug("DeleteOperator.Current() returning tuple with deletedCount: " + deletedCount + " for table " + tableName);
+        Logger.debug("DeleteOperator.Current() returning tuple with deletedCount: " + deletedCount + " for table "
+                + tableName);
         return new TempTuple(values);
     }
 
@@ -132,7 +153,8 @@ public class DeleteOperator implements PhysicalOperator {
             }
             child.Close();
             isOpen = false;
-            Logger.debug("DeleteOperator.Close() called for table " + tableName + ", deleted " + deletedCount + " records");
+            Logger.debug(
+                    "DeleteOperator.Close() called for table " + tableName + ", deleted " + deletedCount + " records");
         } catch (DBException e) {
             Logger.error("Error closing DeleteOperator for table " + tableName, e);
         }

@@ -10,6 +10,7 @@ import edu.sustech.cs307.system.DBManager;
 import edu.sustech.cs307.tuple.TableTuple;
 import edu.sustech.cs307.tuple.Tuple;
 import edu.sustech.cs307.index.Index;
+import edu.sustech.cs307.index.BPlusTreeIndex;
 import edu.sustech.cs307.value.Value;
 import org.pmw.tinylog.Logger;
 
@@ -18,26 +19,29 @@ import java.util.List;
 
 public class IndexScanOperator implements PhysicalOperator {
     private String tableName;
-    private String columnName;
+    private String columnName; // The column on which the index is defined and used for searching
     private DBManager dbManager;
     private TableMeta tableMeta;
     private RecordFileHandle fileHandle;
     private Record currentRecord;
-    private Value searchKey;
+    private Value searchKey; // The specific key value to search for in the index
     private boolean isOpen = false;
-    private Index index;
+    private Index index; // Holds the actual index structure (e.g., BPlusTreeIndex)
     private List<RID> matchingRIDs;
     private int currentRIDIndex;
 
-    public IndexScanOperator(String tableName, String columnName, Value searchKey, DBManager dbManager) {
+    // Constructor for an exact match query using an index
+    public IndexScanOperator(String tableName, String columnName, Value searchKey, DBManager dbManager, Index index) {
         this.tableName = tableName;
         this.columnName = columnName;
         this.searchKey = searchKey;
         this.dbManager = dbManager;
+        this.index = index; // Assign the provided index
         try {
             this.tableMeta = dbManager.getMetaManager().getTable(tableName);
         } catch (DBException e) {
-            Logger.error("Failed to get table metadata: " + e.getMessage());
+            Logger.error("Failed to get table metadata for IndexScanOperator: " + e.getMessage());
+            // Optionally, rethrow or handle more gracefully
         }
     }
 
@@ -53,23 +57,37 @@ public class IndexScanOperator implements PhysicalOperator {
     public void Begin() throws DBException {
         try {
             fileHandle = dbManager.getRecordManager().OpenFile(tableName);
+            // The index is now passed via constructor, so we use it directly.
+            if (this.index == null) {
+                // Fallback or error if no index is provided.
+                // For now, let's assume an index is always provided if this operator is chosen.
+                // Alternatively, try to fetch it here if not passed (though less clean).
+                // this.index = dbManager.getIndexManager().getIndex(tableName, columnName); //
+                // Hypothetical
+                throw new DBException(edu.sustech.cs307.exception.ExceptionTypes
+                        .InvalidOperation("IndexScanOperator requires an Index."));
+            }
 
-            // 在实际应用中，你会从索引管理器中获取索引实例
-            // 这里简化处理，假设我们有一个可用的索引
-            // 从索引中查找匹配searchKey的所有RIDs
-            matchingRIDs = findMatchingRIDs();
+            matchingRIDs = findMatchingRIDs(); // Use the provided index to find RIDs
             currentRIDIndex = 0;
             isOpen = true;
         } catch (DBException e) {
             Logger.error("Failed to begin index scan: " + e.getMessage());
             isOpen = false;
-            throw e; // 重新抛出异常以便上层处理
+            throw e;
         }
     }
 
-    private List<RID> findMatchingRIDs() {
-        // 这里应该使用真实的索引查找实现
-        // 现在只是返回一个空列表作为占位符
+    // Uses the associated index to find RIDs matching the searchKey.
+    private List<RID> findMatchingRIDs() throws DBException {
+        if (this.index != null && this.searchKey != null) {
+            // Assuming the Index interface has a search method.
+            // Our BPlusTreeIndex (simulated with TreeMap) has search(Value key).
+            return this.index.search(this.searchKey);
+        }
+        // Fallback to an empty list if no index or searchKey is available,
+        // though Begin() should ideally prevent this state.
+        Logger.warn("Index or searchKey is null in findMatchingRIDs for table " + tableName);
         return new ArrayList<>();
     }
 

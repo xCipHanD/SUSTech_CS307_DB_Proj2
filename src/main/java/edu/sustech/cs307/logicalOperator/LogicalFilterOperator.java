@@ -28,17 +28,14 @@ public class LogicalFilterOperator extends LogicalOperator {
         String nodeHeader = "LogicalFilterOperator(condition=" + condition + ")";
         LogicalOperator child = getChildren().get(0); // 获取过滤的子节点
 
-        // 拆分子节点的多行字符串
         String[] childLines = child.toString().split("\\R");
 
-        // 当前节点
         sb.append(nodeHeader);
 
-        // 子节点处理
         if (childLines.length > 0) {
-            sb.append("\n    └── ").append(childLines[0]);
+            sb.append("\n└── ").append(childLines[0]);
             for (int i = 1; i < childLines.length; i++) {
-                sb.append("\n    ").append(childLines[i]);
+                sb.append("\n\t").append(childLines[i]);
             }
         }
 

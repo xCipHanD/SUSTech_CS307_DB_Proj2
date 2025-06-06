@@ -2,7 +2,7 @@ package edu.sustech.cs307.storage;
 
 import edu.sustech.cs307.exception.DBException;
 
-import java.util.*;
+import java.util.*; 
 
 /**
  * BufferPool 类实现了一个缓冲池，用于管理页面的缓存。
@@ -170,7 +170,6 @@ public class BufferPool {
         Integer frame_id = pageMap.get(position);
         if (frame_id != null) {
             Page pageToReset = pages.get(frame_id);
-
             if (pageToReset.pin_count > 0) {
                 return false;
             }
@@ -206,8 +205,16 @@ public class BufferPool {
             Integer frame_id = entry.getValue();
             if (filename.equals("") || position.filename.equals(filename)) {
                 Page page = pages.get(frame_id);
-                diskManager.FlushPage(page);
-                page.dirty = false;
+                try {
+                    if (diskManager.fileExists(position.filename)) {
+                        diskManager.FlushPage(page);
+                        page.dirty = false;
+                    } else {
+                        page.dirty = false;
+                    }
+                } catch (DBException e) {
+                    page.dirty = false;
+                }
             }
         }
     }
@@ -226,7 +233,18 @@ public class BufferPool {
             }
         }
         for (PagePosition position : positions) {
-            DeletePage(position);
+            Integer frame_id = pageMap.get(position);
+            if (frame_id != null) {
+                Page page = pages.get(frame_id);
+                page.data.setZero(0, page.data.capacity());
+                page.dirty = false;
+                page.pin_count = 0;
+                pageMap.remove(position);
+                page.position = new PagePosition("null", 0);
+                if (!freeList.contains(frame_id)) {
+                    freeList.add(frame_id);
+                }
+            }
         }
     }
 

@@ -29,12 +29,19 @@ public class ProjectTuple extends Tuple {
      */
     @Override
     public Value getValue(TabCol tabCol) throws DBException {
-        for (TabCol projectColumn : schema) {
-            if (projectColumn.equals(tabCol)) {
-                return inputTuple.getValue(tabCol); // Get value from input tuple
+        // 首先尝试在当前投影的 schema 中查找完全匹配
+        for (int i = 0; i < schema.size(); i++) {
+            TabCol colMeta = schema.get(i);
+            if (colMeta.getColumnName().equalsIgnoreCase(tabCol.getColumnName()) &&
+                    (tabCol.getTableName() == null || colMeta.getTableName() == null ||
+                            colMeta.getTableName().equalsIgnoreCase(tabCol.getTableName()))) {
+
+                return inputTuple.getValue(colMeta);
             }
         }
-        return null; // Column not in projection list
+
+        // 如果在投影的 schema 中没有找到，委托给原始输入 tuple
+        return inputTuple.getValue(tabCol);
     }
 
     /**

@@ -9,11 +9,13 @@ import edu.sustech.cs307.value.Value;
 import edu.sustech.cs307.value.ValueType;
 import edu.sustech.cs307.meta.ColumnMeta;
 import edu.sustech.cs307.meta.TableMeta;
+import edu.sustech.cs307.index.Index; // Added import for Index
 
 import net.sf.jsqlparser.expression.DoubleValue;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.LongValue;
 import net.sf.jsqlparser.expression.StringValue;
+import net.sf.jsqlparser.expression.operators.relational.EqualsTo; // Added import for EqualsTo
 import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
 import net.sf.jsqlparser.expression.operators.relational.ParenthesedExpressionList;
 import net.sf.jsqlparser.schema.Column;
@@ -22,7 +24,6 @@ import net.sf.jsqlparser.statement.select.Values;
 import org.pmw.tinylog.Logger;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 
 public class PhysicalPlanner {
@@ -43,6 +44,8 @@ public class PhysicalPlanner {
             return handleDelete(dbManager, deleteOperator);
         } else if (logicalOp instanceof LogicalAggregateOperator aggregateOperator) {
             return handleAggregate(dbManager, aggregateOperator);
+        } else if (logicalOp instanceof LogicalOrderByOperator orderByOperator) {
+            return handleOrderBy(dbManager, orderByOperator);
         } else {
             throw new DBException(ExceptionTypes.UnsupportedOperator(logicalOp.getClass().getSimpleName()));
         }
@@ -67,39 +70,134 @@ public class PhysicalPlanner {
     private static PhysicalOperator handleTableScan(DBManager dbManager, LogicalTableScanOperator logicalTableScanOp)
             throws DBException {
         String tableName = logicalTableScanOp.getTableName();
-        TableMeta tableMeta;
-        try {
-            tableMeta = dbManager.getMetaManager().getTable(tableName);
-        } catch (DBException e) {
-            // Fallback to SeqScan if TableMeta cannot be retrieved
-            return new SeqScanOperator(tableName, dbManager);
+        TableMeta tableMeta = dbManager.getMetaManager().getTable(tableName);
+
+        if (tableMeta.getIndexes() != null && !tableMeta.getIndexes().isEmpty()) {
+            String firstIndexedColumn = tableMeta.getIndexes().keySet().iterator().next();
+
+            try {
+                Index index = dbManager.getIndexManager().getIndex(tableName, firstIndexedColumn);
+
+                if (index == null && tableMeta.getIndexes().containsKey(firstIndexedColumn)) {
+                    index = dbManager.getIndexManager().createIndex(tableName, firstIndexedColumn);
+                    Logger.info("Created new B+Tree index for full table scan on {}.{}", tableName,
+                            firstIndexedColumn);
+                }
+
+                if (index != null) {
+                    Logger.info("Using HybridScanOperator for full table scan on table {} with index on column {}",
+                            tableName, firstIndexedColumn);
+                    return new HybridScanOperator(tableName, firstIndexedColumn, null, dbManager, index);
+                }
+            } catch (DBException e) {
+                Logger.warn("Failed to use index for table scan on {}: {}, falling back to SeqScan",
+                        tableName, e.getMessage());
+            }
         }
 
-        // Check if index exists for the table (for now, assume RBTreeIndex always
-        // exists if index is defined)
-        if (tableMeta.getIndexes() != null && !tableMeta.getIndexes().isEmpty()) {
-            throw new RuntimeException("unimplement");
-        } else {
-            return new SeqScanOperator(tableName, dbManager);
-        }
+        Logger.info("Using SeqScanOperator for table {} (no suitable index available)", tableName);
+        return new SeqScanOperator(tableName, dbManager);
     }
 
     private static PhysicalOperator handleFilter(DBManager dbManager, LogicalFilterOperator logicalFilterOp)
             throws DBException {
+        LogicalOperator childLogicalOp = logicalFilterOp.getChild();
+        Expression whereExpr = logicalFilterOp.getWhereExpr();
+
+        if (childLogicalOp instanceof LogicalTableScanOperator) {
+            LogicalTableScanOperator tableScanOp = (LogicalTableScanOperator) childLogicalOp;
+            String tableName = tableScanOp.getTableName();
+            TableMeta tableMeta = dbManager.getMetaManager().getTable(tableName);
+
+            if (whereExpr instanceof EqualsTo) {
+                EqualsTo equalsTo = (EqualsTo) whereExpr;
+                Expression leftExpr = equalsTo.getLeftExpression();
+                Expression rightExpr = equalsTo.getRightExpression();
+
+                Column queryColumn = null;
+                Value constantValue = null;
+
+                if (leftExpr instanceof Column && !(rightExpr instanceof Column)) {
+                    queryColumn = (Column) leftExpr;
+                    constantValue = getConstantValueFromExpression(rightExpr, dbManager, tableMeta,
+                            queryColumn.getColumnName());
+                } else if (rightExpr instanceof Column && !(leftExpr instanceof Column)) {
+                    queryColumn = (Column) rightExpr;
+                    constantValue = getConstantValueFromExpression(leftExpr, dbManager, tableMeta,
+                            queryColumn.getColumnName());
+                }
+
+                if (queryColumn != null && constantValue != null) {
+                    String columnName = queryColumn.getColumnName();
+
+                    Index index = dbManager.getIndexManager().getIndex(tableName, columnName);
+
+                    if (index == null && tableMeta.getIndexes() != null
+                            && tableMeta.getIndexes().containsKey(columnName)) {
+                        index = dbManager.getIndexManager().createIndex(tableName, columnName);
+                        Logger.info("Created new B+Tree index for {}.{}", tableName, columnName);
+                    }
+
+                    if (index != null) {
+                        Logger.info("Using HybridScanOperator for table {} on column {} with search key {}",
+                                tableName, columnName, constantValue);
+                        return new HybridScanOperator(tableName, columnName, constantValue, dbManager, index);
+                    }
+                }
+            }
+        }
+
         PhysicalOperator inputOp = generateOperator(dbManager, logicalFilterOp.getChild());
-        return new FilterOperator(inputOp, logicalFilterOp.getWhereExpr());
+        return new FilterOperator(inputOp, whereExpr);
+    }
+
+    // Helper method to extract a Value from a JSQLParser Expression (literal)
+    // This needs to be robust and handle different types.
+    private static Value getConstantValueFromExpression(Expression expr, DBManager dbManager, TableMeta tableMeta,
+            String columnName) throws DBException {
+        // We need the column's type to correctly create the Value object
+        ColumnMeta columnMeta = tableMeta.getColumnMeta(columnName);
+        if (columnMeta == null) {
+            throw new DBException(ExceptionTypes.ColumnDoesNotExist("Column " + columnName + " not found in table "
+                    + tableMeta.tableName + " for filter value extraction."));
+        }
+        ValueType expectedType = columnMeta.type;
+
+        if (expr instanceof StringValue) {
+            // Assuming ValueType.CHAR can represent various string types like VARCHAR,
+            // TEXT, etc.
+            if (expectedType != ValueType.CHAR) {
+                throw new DBException(ExceptionTypes.TypeMismatch(
+                        "Type mismatch for column " + columnName + ". Expected " + expectedType + " but got CHAR."));
+            }
+            return new Value(((StringValue) expr).getValue());
+        } else if (expr instanceof LongValue) {
+            // Assuming ValueType.INTEGER can represent various integer types like BIGINT,
+            // SMALLINT, etc.
+            if (expectedType != ValueType.INTEGER) {
+                throw new DBException(ExceptionTypes.TypeMismatch(
+                        "Type mismatch for column " + columnName + ". Expected " + expectedType + " but got INTEGER."));
+            }
+            return new Value(((LongValue) expr).getValue());
+        } else if (expr instanceof DoubleValue) {
+            if (expectedType == ValueType.FLOAT) {
+                return new Value((float) ((DoubleValue) expr).getValue());
+            } else if (expectedType == ValueType.DOUBLE) {
+                return new Value(((DoubleValue) expr).getValue());
+            } else {
+                throw new DBException(ExceptionTypes.TypeMismatch("Type mismatch for column " + columnName
+                        + ". Expected " + expectedType + " but got DOUBLE/FLOAT."));
+            }
+        }
+        // Add more types as needed (DateValue, etc.)
+        return null; // Or throw an exception if the expression type is not supported as a constant
     }
 
     private static PhysicalOperator handleJoin(DBManager dbManager, LogicalJoinOperator logicalJoinOp)
             throws DBException {
         PhysicalOperator leftOp = generateOperator(dbManager, logicalJoinOp.getLeftInput());
         PhysicalOperator rightOp = generateOperator(dbManager, logicalJoinOp.getRightInput());
-        PhysicalOperator joinOp = new NestedLoopJoinOperator(leftOp, rightOp, logicalJoinOp.getJoinExprs());
-
-        Collection<Expression> joinFilters = logicalJoinOp.getJoinExprs();
-        PhysicalOperator finalOp = new FilterOperator(joinOp, joinFilters);
-
-        return finalOp;
+        return new NestedLoopJoinOperator(leftOp, rightOp, logicalJoinOp.getJoinExprs(), logicalJoinOp.getJoinType());
     }
 
     private static PhysicalOperator handleProject(DBManager dbManager, LogicalProjectOperator logicalProjectOp)
@@ -229,10 +327,39 @@ public class PhysicalPlanner {
 
     private static PhysicalOperator handleUpdate(DBManager dbManager, LogicalUpdateOperator logicalUpdateOp)
             throws DBException {
-        PhysicalOperator scanner = generateOperator(dbManager, logicalUpdateOp.getChild());
+        LogicalOperator child = logicalUpdateOp.getChild();
+        PhysicalOperator scanner;
+
+        if (child instanceof LogicalFilterOperator) {
+            LogicalFilterOperator filterOp = (LogicalFilterOperator) child;
+            String tableName = logicalUpdateOp.getTableName();
+
+            SeqScanOperator seqScan = new SeqScanOperator(tableName, dbManager);
+            scanner = new FilterOperator(seqScan, filterOp.getWhereExpr());
+
+            Logger.info("Using SeqScanOperator with FilterOperator for UPDATE on table {}", tableName);
+        } else if (child instanceof LogicalTableScanOperator) {
+            String tableName = ((LogicalTableScanOperator) child).getTableName();
+            scanner = new SeqScanOperator(tableName, dbManager);
+
+            Logger.info("Using SeqScanOperator for UPDATE on table {}", tableName);
+        } else {
+            PhysicalOperator generatedOp = generateOperator(dbManager, child);
+            if (!(generatedOp instanceof SeqScanOperator) && !(generatedOp instanceof FilterOperator)) {
+                throw new DBException(ExceptionTypes.InvalidOperation(
+                        "UPDATE operation requires SeqScanOperator, but got: "
+                                + generatedOp.getClass().getSimpleName()));
+            }
+            scanner = generatedOp;
+        }
+
         return new UpdateOperator(scanner, logicalUpdateOp.getTableName(),
-                logicalUpdateOp
-                        .getUpdateSets(),
-                logicalUpdateOp.getExpression());
+                logicalUpdateOp.getUpdateSets(), logicalUpdateOp.getExpression(), dbManager);
+    }
+
+    private static PhysicalOperator handleOrderBy(DBManager dbManager, LogicalOrderByOperator orderByOperator)
+            throws DBException {
+        PhysicalOperator childOperator = generateOperator(dbManager, orderByOperator.getChild());
+        return new PhysicalOrderByOperator(childOperator, orderByOperator);
     }
 }

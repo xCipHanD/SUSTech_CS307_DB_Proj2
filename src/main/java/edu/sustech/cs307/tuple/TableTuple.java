@@ -71,13 +71,15 @@ public class TableTuple extends Tuple {
         if (columnType == ValueType.INTEGER) {
             return new Value(byteBuf.getLong(0));
         } else if (columnType == ValueType.CHAR) {
-            return new Value(byteBuf.getCharSequence(0, 64, java.nio.charset.StandardCharsets.UTF_8).toString());
+            // Use byteBuf.readableBytes() to get the actual length of the char sequence
+            return new Value(byteBuf
+                    .getCharSequence(0, byteBuf.readableBytes(), java.nio.charset.StandardCharsets.UTF_8).toString());
         } else if (columnType == ValueType.FLOAT) {
             return new Value(byteBuf.getFloat(0));
         } else if (columnType == ValueType.DOUBLE) {
             return new Value(byteBuf.getDouble(0));
         } else {
-            throw new DBException(ExceptionTypes.UnsupportedValueType(columnType));
+            throw new DBException(ExceptionTypes.UnsupportedValueType(tableName, columnType));
         }
     }
 

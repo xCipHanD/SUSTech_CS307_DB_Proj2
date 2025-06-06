@@ -4,6 +4,7 @@ import edu.sustech.cs307.exception.DBException;
 import edu.sustech.cs307.exception.ExceptionTypes;
 import edu.sustech.cs307.storage.DiskManager;
 import edu.sustech.cs307.system.DBManager;
+import edu.sustech.cs307.meta.TableMeta;
 import net.sf.jsqlparser.statement.drop.Drop;
 import org.pmw.tinylog.Logger;
 
@@ -25,6 +26,8 @@ public class DropTableExecutor implements DMLExecutor {
         String dataFileName = tableName + "/data";
 
         try {
+            cleanupTableIndexes(tableName);
+            
             dbManager.getBufferPool().DeleteAllPages(dataFileName);
             dbManager.dropTable(tableName);
             dbManager.getDiskManager().filePages.remove(dataFileName);
@@ -33,6 +36,27 @@ public class DropTableExecutor implements DMLExecutor {
         } catch (DBException e) {
             Logger.error("Failed to drop table {}: {}", tableName, e.getMessage());
             throw e;
+        }
+    }
+    
+    /**
+     * 清理表的所有索引
+     */
+    private void cleanupTableIndexes(String tableName) throws DBException {
+        try {
+            TableMeta tableMeta = dbManager.getMetaManager().getTable(tableName);
+            if (tableMeta != null && tableMeta.getIndexes() != null) {
+                for (String columnName : tableMeta.getIndexes().keySet()) {
+                    if (dbManager.getIndexManager() != null) {
+                        boolean dropped = dbManager.getIndexManager().dropIndex(tableName, columnName);
+                        if (dropped) {
+                            Logger.info("Cleaned up index for {}.{}", tableName, columnName);
+                        }
+                    }
+                }
+            }
+        } catch (DBException e) {
+            Logger.warn("Failed to cleanup indexes for table {}: {}", tableName, e.getMessage());
         }
     }
 }

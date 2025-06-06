@@ -9,6 +9,7 @@ import edu.sustech.cs307.storage.BufferPool;
 import edu.sustech.cs307.storage.DiskManager;
 import edu.sustech.cs307.storage.Page;
 import edu.sustech.cs307.storage.PagePosition;
+import org.pmw.tinylog.Logger;
 
 /**
  * 记录管理器类，负责管理数据库记录的创建、删除和文件操作。
@@ -87,5 +88,41 @@ public class RecordManager {
      */
     public void CloseFile(RecordFileHandle recordFileHandle) throws DBException {
         bufferPool.FlushAllPages(recordFileHandle.getFilename());
+    }
+
+    /**
+     * 同步所有记录文件的状态到磁盘，确保数据一致性
+     * 
+     * @throws DBException 如果在同步过程中发生错误
+     */
+    public void sync() throws DBException {
+        try {
+            // 1. 刷新所有缓冲池中的页面
+            bufferPool.FlushAllPages("");
+
+            // 2. 强制磁盘管理器同步
+            diskManager.sync();
+
+            Logger.debug("RecordManager synchronized successfully");
+        } catch (Exception e) {
+            Logger.error("Failed to sync RecordManager: {}", e.getMessage());
+            throw new DBException(ExceptionTypes.BadIOError("RecordManager sync failed: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * 同步指定文件的状态到磁盘
+     * 
+     * @param filename 要同步的文件名
+     * @throws DBException 如果在同步过程中发生错误
+     */
+    public void syncFile(String filename) throws DBException {
+        try {
+            bufferPool.FlushAllPages(filename);
+            Logger.debug("File {} synchronized successfully", filename);
+        } catch (Exception e) {
+            Logger.error("Failed to sync file {}: {}", filename, e.getMessage());
+            throw new DBException(ExceptionTypes.BadIOError("File sync failed: " + e.getMessage()));
+        }
     }
 }

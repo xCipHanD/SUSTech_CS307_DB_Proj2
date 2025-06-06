@@ -38,8 +38,8 @@ public class ValueComparer {
                 Double db2 = (Double) v2.value;
                 return Double.compare(db1, db2);
             case CHAR:
-                String s1 = (String) v1.value;
-                String s2 = (String) v2.value;
+                String s1 = (String) v1.value.toString().trim();
+                String s2 = (String) v2.value.toString().trim();
                 return s1.compareTo(s2);
             default:
                 throw new DBException(ExceptionTypes.WrongComparisonError(v1.type, v2.type));
