@@ -20,7 +20,6 @@ This is a comprehensive database management system developed for the CS307 Datab
 - **🌳 B+ Tree Indexing**: Efficient indexing system with automatic index management
 - **🌐 Web Interface**: Modern, responsive web UI for database interaction
 - **🔗 REST API**: HTTP server for programmatic database access
-- **⚡ High Performance**: Optimized for concurrent operations with proper transaction handling
 - **📊 Aggregation Functions**: Support for SUM, MAX, MIN, COUNT, AVG operations
 - **🔢 Extended Data Types**: Full support for single-precision FLOAT and double-precision DOUBLE
 - **📋 Advanced Queries**: Implemented ORDER BY sorting and GROUP BY grouping
@@ -34,7 +33,7 @@ Our implementation significantly extends the original [engine-project](https://g
 - **Advanced Indexing**: Implemented B+ tree indexing with automatic index management and optimization
 - **Query Optimization**: Built comprehensive logical and physical query planners
 - **Web Interface**: Developed a modern web-based interface for database interaction
-- **Performance Improvements**: Added buffer pool optimizations and concurrent operation support
+- **Performance Improvements**: Added buffer pool optimizations
 - **Extended Data Types**: Support for FLOAT, DOUBLE, and enhanced CHAR handling
 - **System Management**: Added table metadata management, index synchronization, and persistence
 
